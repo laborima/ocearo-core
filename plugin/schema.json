@@ -1,0 +1,277 @@
+{
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "enum": [
+        "en",
+        "fr"
+      ],
+      "default": "fr"
+    },
+    "personality": {
+      "type": "string",
+      "title": "Assistant Personality",
+      "enum": [
+        "professional",
+        "jarvis",
+        "friend",
+        "sea ​​dog"
+      ],
+      "default": "jarvis"
+    },
+    "mode": {
+      "type": "string",
+      "title": "Operating Mode",
+      "enum": [
+        "sailing",
+        "anchored",
+        "motoring",
+        "moored",
+        "racing"
+      ],
+      "default": "sailing"
+    },
+    "llm": {
+      "type": "object",
+      "title": "LLM Configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable LLM",
+          "default": true
+        },
+        "ollamaHost": {
+          "type": "string",
+          "title": "Ollama Host",
+          "default": "http://localhost:11434"
+        },
+        "model": {
+          "type": "string",
+          "title": "Model Name",
+          "default": "phi3:mini"
+        },
+        "timeout": {
+          "type": "number",
+          "title": "Timeout (ms)",
+          "default": 30000
+        }
+      }
+    },
+    "voice": {
+      "type": "object",
+      "title": "Voice Configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable Voice",
+          "default": true
+        },
+        "backend": {
+          "type": "string",
+          "title": "TTS Backend",
+          "enum": [
+            "piper",
+            "espeak",
+            "console"
+          ],
+          "default": "piper"
+        }
+      }
+    },
+    "weatherProvider": {
+      "type": "object",
+      "title": "Weather Provider",
+      "properties": {
+        "source": {
+          "type": "string",
+          "title": "Weather Source",
+          "enum": [
+            "openmeteo","noaa"
+          ],
+          "default": "openmeteo"
+        },
+        "cacheMinutes": {
+          "type": "number",
+          "title": "Cache Duration (minutes)",
+          "default": 15
+        }
+      }
+    },
+    "tidesProvider": {
+      "type": "object",
+      "title": "Tides Provider",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable Tides",
+          "default": false
+        },
+        "provider": {
+          "type": "string",
+          "title": "Tide Provider",
+          "enum": [
+            "none",
+            "local",
+            "shom",
+            "noaa"
+          ],
+          "default": "noaa"
+        },
+        "stationId": {
+          "type": "string",
+          "title": "Station ID",
+          "description": "Provider station identifier. For NOAA, use the NOAA station ID (e.g., 8454000). For local, this matches the subfolder under tides/<stationId>/.",
+          "default": ""
+        },
+        "cacheHours": {
+          "type": "number",
+          "title": "Cache Duration (hours)",
+          "default": 6,
+          "minimum": 1,
+          "maximum": 72
+        }
+      }
+    },
+    "alerts": {
+      "type": "object",
+      "title": "Alert Settings",
+      "properties": {
+        "suppressionMinutes": {
+          "type": "number",
+          "title": "Alert Suppression (minutes)",
+          "default": 5
+        },
+        "speakAlarms": {
+          "type": "boolean",
+          "title": "Speak Alarms",
+          "default": true
+        }
+      }
+    },
+    "logbook": {
+      "type": "object",
+      "title": "Logbook Settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable SignalK Logbook",
+          "default": false
+        },
+        "serverUrl": {
+          "type": "string",
+          "title": "SignalK Server URL",
+          "default": "http://localhost:3000"
+        },
+        "apiPath": {
+          "type": "string",
+          "title": "API Path",
+          "default": "/signalk/v1/api/logbook"
+        },
+        "author": {
+          "type": "string",
+          "title": "Log Author",
+          "default": "ocearo-core"
+        },
+        "timeout": {
+          "type": "number",
+          "title": "API Timeout (ms)",
+          "default": 5000,
+          "minimum": 1000,
+          "maximum": 30000
+        }
+      }
+    },
+    "analysisLogging": {
+      "type": "object",
+      "title": "AI Analysis Logging",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable AI Analysis Logging",
+          "default": true
+        },
+        "includeVesselData": {
+          "type": "boolean",
+          "title": "Include Vessel Data in Analysis Logs",
+          "default": true
+        },
+        "logRecommendations": {
+          "type": "boolean",
+          "title": "Log AI Recommendations",
+          "default": true
+        }
+      }
+    },
+    "schedules": {
+      "type": "object",
+      "title": "Schedule Settings",
+      "properties": {
+        "alertCheck": {
+          "type": "number",
+          "title": "Alert Check Interval (seconds)",
+          "default": 30
+        },
+        "weatherUpdate": {
+          "type": "number",
+          "title": "Weather Update Interval (seconds)",
+          "default": 300
+        },
+        "sailAnalysis": {
+          "type": "number",
+          "title": "Sail Analysis Interval (seconds)",
+          "default": 120
+        }
+      }
+    },
+    "startupAnalysis": {
+      "type": "object",
+      "title": "Startup Analysis Settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable Startup Analysis",
+          "default": true
+        },
+        "delaySeconds": {
+          "type": "number",
+          "title": "Delay Before Analysis (seconds)",
+          "default": 20,
+          "minimum": 5,
+          "maximum": 300
+        },
+        "includeWeatherForecast": {
+          "type": "boolean",
+          "title": "Include Weather Forecast",
+          "default": true
+        },
+        "includeTides": {
+          "type": "boolean",
+          "title": "Include Tide Information",
+          "default": true
+        },
+        "includeSailRecommendations": {
+          "type": "boolean",
+          "title": "Include Sail Recommendations",
+          "default": true
+        },
+        "includeTankLevels": {
+          "type": "boolean",
+          "title": "Include Tank Levels",
+          "default": true
+        },
+        "includeBatteryLevels": {
+          "type": "boolean",
+          "title": "Include Battery Levels",
+          "default": true
+        },
+        "speakAnalysis": {
+          "type": "boolean",
+          "title": "Speak Startup Analysis",
+          "default": true
+        }
+      }
+    }
+  }
+}

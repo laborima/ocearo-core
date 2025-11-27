@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build output
+dist/
+build/
+*.tgz
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Plugin data (generated at runtime)
+plugin-config-data/
+memory/
+state/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Audio files (generated)
+*.wav
+*.mp3
+
+# Development notes (not for release)
+docs/TODO.md
+docs/PROMPT.md
+docs/SPEC.md
