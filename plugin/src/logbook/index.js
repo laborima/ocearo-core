@@ -1,7 +1,8 @@
-/*
+/**
  * Logbook Module - AI Analysis Integration
- * Specialized module for adding AI analysis entries to signalk-logbook
- * Focuses on logAnalysis - the main purpose of Jarvis AI
+ *
+ * Proxies logbook operations to @meri-imperiumi/signalk-logbook plugin.
+ * Provides AI analysis entry logging for the Ocearo brain orchestrator.
  */
 
 // Using native fetch API
@@ -64,7 +65,7 @@ class LogbookManager {
         this.signalkLogbook = {
             enabled: logbookConfig.enabled !== undefined ? logbookConfig.enabled : true,
             serverUrl: logbookConfig.serverUrl || '',
-            apiPath: logbookConfig.apiPath || '/signalk/v1/api/plugins/signalk-logbook/logs',
+            apiPath: logbookConfig.apiPath || '/plugins/signalk-logbook/logs',
             author: logbookConfig.author || 'ocearo-core',
             timeout: logbookConfig.timeout || 5000
         };
@@ -165,46 +166,7 @@ class LogbookManager {
         try {
             // Validate server URL - if empty, try to get from app
             if (!this.signalkLogbook.serverUrl) {
-                // Try to get server URL from SignalK app
-                if (this.app.config && this.app.config.getExternalPort) {
-                    const port = this.app.config.getExternalPort();
-                    this.signalkLogbook.serverUrl = `http://localhost:${port}`;
-                    this.app.debug(`Using SignalK server URL from config: ${this.signalkLogbook.serverUrl}`);
-                } else {
-                    // Fallback to checking common ports if auto-detection fails
-                    const commonUrls = [
-                        'https://cirrus.local:3443',
-                        'http://localhost:3000',
-                        'http://localhost:80', 
-                        'http://localhost:443', 
-                        'http://localhost:8080'
-                    ];
-                    let foundUrl = null;
-                    
-                    for (const url of commonUrls) {
-                        this.app.debug(`Trying fallback URL: ${url}`);
-                        try {
-                            const controller = new AbortController();
-                            const timeout = setTimeout(() => controller.abort(), 1000);
-                            const res = await this._fetch(`${url}/signalk/v1/api/self`, { signal: controller.signal });
-                            clearTimeout(timeout);
-                            if (res.ok) {
-                                foundUrl = url;
-                                break;
-                            }
-                        } catch (e) {
-                            // ignore
-                        }
-                    }
-                    
-                    if (foundUrl) {
-                        this.signalkLogbook.serverUrl = foundUrl;
-                        this.app.info(`Auto-detected SignalK server URL: ${foundUrl}`);
-                    } else {
-                         this.app.warn('SignalK server URL is not configured and cannot be auto-detected. Defaulting to https://cirrus.local:3443');
-                         this.signalkLogbook.serverUrl = 'https://cirrus.local:3443';
-                    }
-                }
+                this.signalkLogbook.serverUrl = this._detectServerUrl();
             }
 
             const controller = new AbortController();
@@ -235,10 +197,9 @@ class LogbookManager {
             
             // Test if logbook API is available - try multiple common paths
             const possiblePaths = [
+                '/plugins/signalk-logbook/logs',
+                '/plugins/@meri-imperiumi/signalk-logbook/logs',
                 this.signalkLogbook.apiPath,
-                '/signalk/v1/api/plugins/signalk-logbook/logs',
-                '/signalk/v1/api/vessels/self/logbook',
-                '/signalk/v2/api/logbook',
                 '/signalk/v1/api/logbook'
             ];
             
@@ -318,6 +279,24 @@ class LogbookManager {
             }
             return false;
         }
+    }
+
+    /**
+     * Detect the SignalK server URL from app configuration.
+     * @returns {string} The detected server URL
+     */
+    _detectServerUrl() {
+        if (this.app.config?.settings?.ssl) {
+            const port = this.app.config.settings.sslport || this.app.config.settings.sslPort || 3443;
+            return `https://127.0.0.1:${port}`;
+        }
+        if (this.app.config?.settings?.port) {
+            return `http://127.0.0.1:${this.app.config.settings.port}`;
+        }
+        if (process.env.SIGNALK_SERVER_URL) {
+            return process.env.SIGNALK_SERVER_URL;
+        }
+        return 'http://127.0.0.1:3000';
     }
 
     /**
@@ -537,13 +516,18 @@ class LogbookManager {
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), this.signalkLogbook.timeout);
-            
+
+            const body = {
+                text: entry.text,
+                category: entry.category || 'navigation'
+            };
+
             const response = await this._fetch(`${this.signalkLogbook.serverUrl}${this.signalkLogbook.apiPath}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(entry),
+                body: JSON.stringify(body),
                 signal: controller.signal
             });
             
@@ -553,11 +537,11 @@ class LogbookManager {
                 if (response.status === 404) {
                     this.app.warn('SignalK-Logbook API not available (404) - logbook plugin may not be installed');
                     this.isConnected = false;
-                    return; // Don't throw error for 404, just disable logbook
+                    return;
                 }
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
+
             this.app.debug('Analysis entry sent to SignalK-Logbook API successfully');
         } catch (error) {
             if (error.message.includes('404')) {
