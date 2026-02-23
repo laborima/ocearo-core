@@ -70,14 +70,15 @@ Configure the Ollama LLM integration.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `llm.ollamaHost` | string | `"http://localhost:11434"` | Ollama server URL |
-| `llm.model` | string | `"phi3:mini"` | LLM model to use |
+| `llm.model` | string | `"qwen2.5:3b"` | LLM model to use |
 | `llm.timeoutSeconds` | number | `30` | Request timeout |
 
 ### Recommended Models
 
 | Model | Size | Speed | Quality | RAM Required |
 |-------|------|-------|---------|--------------|
-| `phi3:mini` | 2.3GB | Fast | Good | 4GB |
+| `qwen2.5:3b` | 2.0GB | Fast | Good | 4GB |
+| `phi4-mini` | 2.5GB | Fast | Good | 4GB |
 | `llama3` | 4.7GB | Medium | Better | 8GB |
 | `mistral` | 4.1GB | Medium | Better | 8GB |
 
@@ -272,25 +273,18 @@ Configure alert handling.
   "mode": "sailing",
   "llm": {
     "ollamaHost": "http://localhost:11434",
-    "model": "phi3:mini",
+    "model": "qwen2.5:3b",
     "timeoutSeconds": 30
   },
   "voice": {
     "enabled": true,
-    "backend": "piper",
-    "piper": {
-      "command": "/home/pi/piper/piper",
-      "model": "/home/pi/piper/en_US-joe-medium.onnx"
-    }
+    "backend": "piper"
   },
   "weatherProvider": {
-    "provider": "openmeteo",
     "cacheMinutes": 30
   },
   "tidesProvider": {
-    "enabled": true,
-    "provider": "local",
-    "stationId": "larochelle"
+    "enabled": true
   },
   "schedules": {
     "alertCheck": 30,
@@ -330,7 +324,7 @@ Configure alert handling.
   "persona": "jarvis",
   "llm": {
     "ollamaHost": "http://localhost:11434",
-    "model": "phi3:mini",
+    "model": "qwen2.5:3b",
     "timeoutSeconds": 60
   },
   "voice": {

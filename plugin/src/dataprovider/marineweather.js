@@ -1,91 +1,111 @@
-/*
- * Marine weather data provider
- * Stub implementation for weather API integration
+/**
+ * Marine Weather Data Provider
+ *
+ * Two-layer weather data strategy:
+ * 1. Current observations from SignalK sensor paths (environment.*)
+ * 2. Forecasts from SignalK Weather API v2 (/signalk/v2/api/weather)
+ *    served by @signalk/open-meteo-provider or similar plugin
+ *
+ * All values exposed in knots / degrees / celsius / hPa for internal use.
  */
 
-
+const MS_TO_KNOTS = 1.94384;
+const RAD_TO_DEG = 180 / Math.PI;
+const KELVIN_OFFSET = 273.15;
+const PA_TO_HPA = 0.01;
 
 class MarineWeatherDataProvider {
     constructor(app, config) {
         this.app = app;
         this.config = config;
-        this.cache = null;
-        this.cacheTimestamp = null;
-        this.cacheDuration = (config.weatherProvider?.cacheMinutes || 30) * 60 * 1000;
+
         this.requestTimeout = (config.weatherProvider?.timeoutSeconds || 15) * 1000;
+        this._serverUrl = null;
     }
 
     /**
-     * Start the provider
+     * Start the provider.
      */
     start() {
-        this.app.debug('Starting marine weather data provider');
+        this._serverUrl = this._detectServerUrl();
+        this.app.debug(`Marine weather provider started (server: ${this._serverUrl})`);
     }
 
     /**
-     * Stop the provider
+     * Stop the provider.
      */
     stop() {
-        this.app.debug('Stopping marine weather data provider');
-        this.cache = null;
-        this.cacheTimestamp = null;
+        this.app.debug('Marine weather provider stopped');
     }
 
     /**
-     * Get weather data
+     * Get weather data with caching.
+     * Merges live sensor readings with forecast data from the Weather API.
+     * @param {Object} position Vessel position {latitude, longitude}
+     * @returns {Object} Weather data in internal format
      */
     async getWeatherData(position) {
-        // Check cache
-        if (this.cache && this.cacheTimestamp && 
-            (Date.now() - this.cacheTimestamp < this.cacheDuration)) {
-            this.app.debug('Returning cached weather data');
-            return this.cache;
-        }
-
-        const provider = this.config.weatherProvider?.provider || 'openmeteo';
-        
-        if (provider === 'none') {
-            return this.getMockWeatherData();
-        }
-
         try {
-            let data;
-            switch (provider) {
-                case 'openmeteo':
-                    data = await this.fetchOpenMeteoData(position);
-                    break;
-                case 'noaa':
-                    data = await this.fetchNOAAData(position);
-                    break;
-                default:
-                    data = await this.getMockWeatherData();
-            }
+            const current = this._readSensorData();
+            const forecast = await this._fetchForecast(position);
 
-            // Update cache
-            this.cache = data;
-            this.cacheTimestamp = Date.now();
-            
+            const data = {
+                current: this._mergeCurrent(current, forecast),
+                forecast: this._buildForecastPeriods(forecast),
+                source: current._hasSensors ? 'sensors+forecast' : 'forecast',
+                timestamp: new Date().toISOString()
+            };
+
             return data;
         } catch (error) {
-            this.app.error('Failed to fetch weather data:', error);
-            return this.getMockWeatherData();
+            this.app.error('Failed to fetch weather data:', error.message);
+            return this._fallbackData();
         }
     }
 
     /**
-     * Fetch weather data from Open-Meteo API
+     * Read current observations from SignalK sensor paths.
+     * @returns {Object} Sensor values in display units
      */
-    async fetchOpenMeteoData(position) {
-        if (!position || !position.latitude || !position.longitude) {
-            this.app.debug('No vessel position available, using mock weather data');
-            return this.getMockWeatherData();
+    _readSensorData() {
+        const windSpeed = this._getSelfPath('environment.wind.speedTrue');
+        const windDirection = this._getSelfPath('environment.wind.directionTrue');
+        const windGust = this._getSelfPath('environment.wind.gust');
+        const temperature = this._getSelfPath('environment.outside.temperature');
+        const pressure = this._getSelfPath('environment.outside.pressure');
+        const humidity = this._getSelfPath('environment.outside.relativeHumidity');
+
+        const hasSensors = windSpeed !== null || temperature !== null || pressure !== null;
+
+        return {
+            windSpeed: windSpeed !== null ? windSpeed * MS_TO_KNOTS : null,
+            windDirection: windDirection !== null ? windDirection * RAD_TO_DEG : null,
+            windGust: windGust !== null ? windGust * MS_TO_KNOTS : null,
+            temperature: temperature !== null ? temperature - KELVIN_OFFSET : null,
+            pressure: pressure !== null ? pressure * PA_TO_HPA : null,
+            humidity: humidity !== null ? humidity * 100 : null,
+            _hasSensors: hasSensors
+        };
+    }
+
+    /**
+     * Fetch hourly forecast from SignalK Weather API v2.
+     * Endpoint served by @signalk/open-meteo-provider plugin.
+     * @param {Object} position Vessel position
+     * @returns {Array|null} Array of hourly forecast objects
+     */
+    async _fetchForecast(position) {
+        if (!position?.latitude || !position?.longitude) {
+            this.app.debug('No position available for weather forecast');
+            return null;
         }
 
-        const url = `https://marine-api.open-meteo.com/v1/marine?` +
-            `latitude=${position.latitude}&longitude=${position.longitude}&` +
-            `hourly=wave_height,wave_direction,wave_period,wind_wave_height,swell_wave_height,` +
-            `swell_wave_direction,swell_wave_period,wind_speed_10m,wind_direction_10m&` +
-            `forecast_days=2&timezone=auto`;
+        if (!this._serverUrl) {
+            this._serverUrl = this._detectServerUrl();
+        }
+
+        const url = `${this._serverUrl}/signalk/v2/api/weather/forecasts/point` +
+            `?lat=${position.latitude}&lon=${position.longitude}&count=48`;
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
@@ -93,112 +113,217 @@ class MarineWeatherDataProvider {
         try {
             const response = await fetch(url, { signal: controller.signal });
             clearTimeout(timeoutId);
-            
+
             if (!response.ok) {
-                throw new Error(`Weather API error: ${response.status}`);
+                if (response.status === 400 || response.status === 404) {
+                    this.app.debug('Weather API not available on this server');
+                    return null;
+                }
+                throw new Error(`Weather API HTTP ${response.status}`);
             }
 
-            const data = await response.json();
-            return this.transformOpenMeteoData(data);
+            const raw = await response.json();
+            return this._parseForecastResponse(raw);
         } catch (error) {
             clearTimeout(timeoutId);
             if (error.name === 'AbortError') {
-                throw new Error(`Weather API timeout after ${this.requestTimeout}ms`);
+                this.app.debug('Weather API request timed out');
+            } else {
+                this.app.debug('Weather API fetch failed:', error.message);
             }
-            throw error;
+            return null;
         }
     }
 
     /**
-     * Transform Open-Meteo data to internal format
+     * Parse the SignalK Weather API v2 response into hourly entries.
+     * Response format matches @signalk/open-meteo-provider output.
+     * @param {Object} raw Raw API response
+     * @returns {Array} Parsed hourly entries
      */
-    transformOpenMeteoData(data) {
-        const currentHour = new Date().getHours();
-        const hourly = data.hourly;
-        
-        return {
-            current: {
-                waveHeight: hourly.wave_height[currentHour],
-                waveDirection: hourly.wave_direction[currentHour],
-                wavePeriod: hourly.wave_period[currentHour],
-                swellHeight: hourly.swell_wave_height[currentHour],
-                swellDirection: hourly.swell_wave_direction[currentHour],
-                swellPeriod: hourly.swell_wave_period[currentHour],
-                windSpeed: hourly.wind_speed_10m[currentHour],
-                windDirection: hourly.wind_direction_10m[currentHour]
-            },
-            forecast: {
-                hours6: this.extractForecastPeriod(hourly, currentHour, 6),
-                hours12: this.extractForecastPeriod(hourly, currentHour, 12),
-                hours24: this.extractForecastPeriod(hourly, currentHour, 24)
-            }
-        };
-    }
+    _parseForecastResponse(raw) {
+        const entries = [];
 
-    /**
-     * Extract forecast for specific period
-     */
-    extractForecastPeriod(hourly, startHour, hours) {
-        const endHour = Math.min(startHour + hours, hourly.wave_height.length);
-        const slice = (arr) => arr.slice(startHour, endHour);
-        
-        return {
-            waveHeightMax: Math.max(...slice(hourly.wave_height)),
-            waveHeightMin: Math.min(...slice(hourly.wave_height)),
-            windSpeedMax: Math.max(...slice(hourly.wind_speed_10m)),
-            windSpeedMin: Math.min(...slice(hourly.wind_speed_10m)),
-            swellHeightMax: Math.max(...slice(hourly.swell_wave_height))
-        };
-    }
+        for (const v of Object.values(raw)) {
+            const entry = {
+                date: v.date || null,
+                windSpeed: null,
+                windDirection: null,
+                windGust: null,
+                waveHeight: null,
+                temperature: null,
+                pressure: null,
+                humidity: null,
+                clouds: null,
+                description: v.description || null
+            };
 
-    /**
-     * Fetch weather data from NOAA (stub)
-     */
-    async fetchNOAAData() {
-        // Stub implementation - would need NOAA API credentials
-        this.app.debug('NOAA weather provider not implemented, using mock data');
-        return this.getMockWeatherData();
-    }
-
-    /**
-     * Get mock weather data for testing/offline mode
-     */
-    getMockWeatherData() {
-        return {
-            current: {
-                waveHeight: 1.5,
-                waveDirection: 270,
-                wavePeriod: 8,
-                swellHeight: 1.2,
-                swellDirection: 280,
-                swellPeriod: 10,
-                windSpeed: 12,
-                windDirection: 260
-            },
-            forecast: {
-                hours6: {
-                    waveHeightMax: 2.0,
-                    waveHeightMin: 1.2,
-                    windSpeedMax: 15,
-                    windSpeedMin: 10,
-                    swellHeightMax: 1.5
-                },
-                hours12: {
-                    waveHeightMax: 2.5,
-                    waveHeightMin: 1.0,
-                    windSpeedMax: 18,
-                    windSpeedMin: 8,
-                    swellHeightMax: 2.0
-                },
-                hours24: {
-                    waveHeightMax: 3.0,
-                    waveHeightMin: 0.8,
-                    windSpeedMax: 20,
-                    windSpeedMin: 5,
-                    swellHeightMax: 2.5
+            if (v.wind) {
+                if (v.wind.speedTrue !== undefined) {
+                    entry.windSpeed = v.wind.speedTrue * MS_TO_KNOTS;
+                }
+                if (v.wind.directionTrue !== undefined) {
+                    entry.windDirection = v.wind.directionTrue * RAD_TO_DEG;
+                }
+                if (v.wind.gust !== undefined) {
+                    entry.windGust = v.wind.gust * MS_TO_KNOTS;
                 }
             }
+
+            if (v.outside) {
+                if (v.outside.temperature !== undefined) {
+                    entry.temperature = v.outside.temperature - KELVIN_OFFSET;
+                }
+                if (v.outside.pressure !== undefined) {
+                    entry.pressure = v.outside.pressure * PA_TO_HPA;
+                }
+                if (v.outside.relativeHumidity !== undefined) {
+                    entry.humidity = v.outside.relativeHumidity * 100;
+                }
+                if (v.outside.cloudCover !== undefined) {
+                    entry.clouds = v.outside.cloudCover;
+                } else if (v.outside.clouds !== undefined) {
+                    entry.clouds = v.outside.clouds;
+                }
+            }
+
+            if (v.water?.waves?.significantHeight !== undefined) {
+                entry.waveHeight = v.water.waves.significantHeight;
+            }
+
+            entries.push(entry);
+        }
+
+        return entries;
+    }
+
+    /**
+     * Merge sensor data with first forecast entry for current conditions.
+     * Sensor values take priority over forecast values.
+     * @param {Object} sensors Sensor readings
+     * @param {Array|null} forecast Hourly forecast entries
+     * @returns {Object} Merged current conditions
+     */
+    _mergeCurrent(sensors, forecast) {
+        const fc = (forecast && forecast.length > 0) ? forecast[0] : {};
+
+        return {
+            windSpeed: sensors.windSpeed ?? fc.windSpeed ?? null,
+            windDirection: sensors.windDirection ?? fc.windDirection ?? null,
+            windGust: sensors.windGust ?? fc.windGust ?? null,
+            temperature: sensors.temperature ?? fc.temperature ?? null,
+            pressure: sensors.pressure ?? fc.pressure ?? null,
+            humidity: sensors.humidity ?? fc.humidity ?? null,
+            waveHeight: fc.waveHeight ?? null,
+            waveDirection: null,
+            wavePeriod: null,
+            swellHeight: null,
+            swellDirection: null,
+            swellPeriod: null,
+            description: fc.description ?? null
         };
+    }
+
+    /**
+     * Build forecast period summaries (6h, 12h, 24h) from hourly data.
+     * @param {Array|null} forecast Hourly entries
+     * @returns {Object} Forecast periods with min/max values
+     */
+    _buildForecastPeriods(forecast) {
+        if (!forecast || forecast.length === 0) {
+            return { hours6: null, hours12: null, hours24: null };
+        }
+
+        return {
+            hours6: this._summarisePeriod(forecast, 0, 6),
+            hours12: this._summarisePeriod(forecast, 0, 12),
+            hours24: this._summarisePeriod(forecast, 0, 24)
+        };
+    }
+
+    /**
+     * Summarise a forecast period by extracting min/max values.
+     * @param {Array} entries All hourly entries
+     * @param {number} start  Start index
+     * @param {number} count  Number of hours
+     * @returns {Object} Period summary
+     */
+    _summarisePeriod(entries, start, count) {
+        const slice = entries.slice(start, start + count);
+        if (slice.length === 0) {
+            return null;
+        }
+
+        const nums = (key) => slice.map(e => e[key]).filter(v => v !== null && v !== undefined);
+
+        const windSpeeds = nums('windSpeed');
+        const waveHeights = nums('waveHeight');
+        const gusts = nums('windGust');
+
+        return {
+            windSpeedMax: windSpeeds.length > 0 ? Math.max(...windSpeeds) : null,
+            windSpeedMin: windSpeeds.length > 0 ? Math.min(...windSpeeds) : null,
+            windGustMax: gusts.length > 0 ? Math.max(...gusts) : null,
+            waveHeightMax: waveHeights.length > 0 ? Math.max(...waveHeights) : null,
+            waveHeightMin: waveHeights.length > 0 ? Math.min(...waveHeights) : null
+        };
+    }
+
+    /**
+     * Return minimal fallback data when no source is available.
+     * @returns {Object} Empty weather structure
+     */
+    _fallbackData() {
+        return {
+            current: {
+                windSpeed: null, windDirection: null, windGust: null,
+                temperature: null, pressure: null, humidity: null,
+                waveHeight: null, waveDirection: null, wavePeriod: null,
+                swellHeight: null, swellDirection: null, swellPeriod: null,
+                description: null
+            },
+            forecast: { hours6: null, hours12: null, hours24: null },
+            source: 'none',
+            timestamp: new Date().toISOString()
+        };
+    }
+
+    /**
+     * Read a value from a SignalK self path.
+     * @param {string} skPath
+     * @returns {number|null}
+     */
+    _getSelfPath(skPath) {
+        if (!this.app.getSelfPath) {
+            return null;
+        }
+        try {
+            const result = this.app.getSelfPath(skPath);
+            if (result && typeof result === 'object' && result.value !== undefined) {
+                return result.value;
+            }
+            return result ?? null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * Detect the local SignalK server URL for Weather API calls.
+     * @returns {string}
+     */
+    _detectServerUrl() {
+        if (this.app.config?.settings?.ssl) {
+            const port = this.app.config.settings.sslport || 3443;
+            return `https://127.0.0.1:${port}`;
+        }
+        if (this.app.config?.settings?.port) {
+            return `http://127.0.0.1:${this.app.config.settings.port}`;
+        }
+        if (process.env.SIGNALK_SERVER_URL) {
+            return process.env.SIGNALK_SERVER_URL;
+        }
+        return 'http://127.0.0.1:3000';
     }
 }
 

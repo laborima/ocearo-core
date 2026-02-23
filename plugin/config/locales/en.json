@@ -1,0 +1,339 @@
+{
+  "meta": { "code": "en", "name": "English", "dateLocale": "en-US" },
+
+  "general": {
+    "welcome": "Welcome aboard",
+    "system_ready": "Ocearo system ready",
+    "system_error": "System error detected",
+    "analysis_failed": "Unable to complete the requested analysis",
+    "ai_unavailable": "AI assistant is not available. Check Ollama service.",
+    "no_data": "Data not available",
+    "startup_complete": "Startup analysis complete"
+  },
+
+  "startup": {
+    "jarvis": "Systems online. How may I assist you, Captain?",
+    "friend": "Hey there! All systems are ready to go.",
+    "professional": "Ocearo initialized. All systems operational.",
+    "sea_dog": "Ahoy! Everything's shipshape, ready to cast off.",
+    "default": "Ocearo initialized. Systems operational."
+  },
+
+  "shutdown": {
+    "jarvis": "Systems going offline. Safe travels, Captain.",
+    "friend": "Powering down. See you soon!",
+    "professional": "Ocearo shutting down. Safe travels.",
+    "sea_dog": "Heading back to port. Fair winds, mate.",
+    "default": "Ocearo shutting down. Safe travels."
+  },
+
+  "mode": {
+    "sailing": "Sailing",
+    "anchored": "Anchored",
+    "motoring": "Motoring",
+    "moored": "Moored",
+    "racing": "Racing",
+    "changed": "Operating mode changed to: {mode}"
+  },
+
+  "status": {
+    "system": "System status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "mode_label": "Mode",
+    "alerts_count": "{count} active alerts",
+    "ai_offline": "Warning: AI assistant offline",
+    "logbook_offline": "Note: Logbook offline",
+    "weather_summary": "Weather: force {beaufort}, {seaState} sea, trend {trend}",
+    "squall_risk_high": "High squall risk",
+    "ais_summary": "AIS: {total} targets, {danger} danger",
+    "no_ais": "No AIS targets in range"
+  },
+
+  "weather": {
+    "unavailable": "Weather data is currently unavailable",
+    "current": "Current conditions: wind {windSpeed} knots from {windDir}, waves {waveHeight} m",
+
+    "beaufort": {
+      "0": "Calm",
+      "1": "Light air",
+      "2": "Light breeze",
+      "3": "Gentle breeze",
+      "4": "Moderate breeze",
+      "5": "Fresh breeze",
+      "6": "Strong breeze",
+      "7": "Near gale",
+      "8": "Gale",
+      "9": "Strong gale",
+      "10": "Storm",
+      "11": "Violent storm",
+      "12": "Hurricane"
+    },
+
+    "strength": {
+      "light": "Light",
+      "moderate": "Moderate",
+      "fresh": "Fresh",
+      "strong": "Strong",
+      "near_gale": "Near gale",
+      "gale": "Gale"
+    },
+
+    "sea_state": {
+      "glassy": "Glassy",
+      "calm": "Calm",
+      "smooth": "Smooth",
+      "slight": "Slight",
+      "moderate": "Moderate",
+      "rough": "Rough",
+      "very_rough": "Very rough",
+      "high": "High"
+    },
+
+    "trend": {
+      "improving": "Improving",
+      "stable": "Stable",
+      "deteriorating": "Deteriorating",
+      "unknown": "Unknown"
+    },
+
+    "pressure": {
+      "steady": "Steady",
+      "rising": "Rising",
+      "rising_fast": "Rising fast",
+      "falling": "Falling",
+      "falling_fast": "Falling fast — low pressure approaching"
+    },
+
+    "alerts": {
+      "high_wind": "Warning: high wind speed {speed} knots",
+      "strong_wind": "Caution: strong wind {speed} knots",
+      "high_waves": "Warning: wave height {height} meters",
+      "pressure_falling_fast": "Barometer falling fast ({rate} hPa/h). Prepare for deterioration.",
+      "squall_risk": "High squall risk: gusts at {gustFactor}% of mean wind, pressure falling.",
+      "wind_against_tide": "Wind against tide! Expect short, steep chop."
+    },
+
+    "advice": {
+      "light_general": "Light air. Maximize sail area, keep crew weight forward.",
+      "moderate_upwind": "Moderate wind upwind. Good sail trim, watch your telltales.",
+      "fresh_warning": "Fresh wind. Take the 1st reef if not done. Reduce headsail.",
+      "strong_warning": "Strong wind. 2nd reef recommended. Working jib or heavily furled genoa.",
+      "near_gale_warning": "Near gale! Storm configuration: storm jib and deep-reefed main. Secure the deck.",
+      "gale_warning": "Gale force! Storm sails or bare poles. Close all hatches. Crew harnessed.",
+      "pressure_dropping": "Barometer falling. Deterioration likely in 6-12h. Anticipate reefing.",
+      "weather_window": "Favorable weather window: {hours}h of stable conditions expected.",
+      "squall_preparation": "Squall approaching. Take a precautionary reef. Hand ready to ease sheets."
+    }
+  },
+
+  "sail": {
+    "point_of_sail": {
+      "in_irons": "In irons",
+      "close_hauled": "Close-hauled",
+      "close_reach": "Close reach",
+      "beam_reach": "Beam reach",
+      "broad_reach": "Broad reach",
+      "running": "Running",
+      "dead_run": "Dead run"
+    },
+
+    "trim_labels": {
+      "mainsheet": "Mainsheet",
+      "traveler": "Traveler",
+      "boomVang": "Boom vang / Kicker",
+      "cunningham": "Cunningham",
+      "outhaul": "Outhaul",
+      "jibLead": "Jib lead",
+      "jibSheet": "Jib sheet",
+      "preventer": "Preventer",
+      "spinnaker": "Spinnaker"
+    },
+
+    "trim_values": {
+      "released": "Released",
+      "tight": "Sheeted in",
+      "tight_telltales": "Sheeted in — telltales streaming",
+      "tight_flat": "Sheeted in — sail flat",
+      "eased_slightly": "Eased slightly",
+      "eased": "Eased",
+      "eased_spreaders": "Eased to spreaders",
+      "eased_power": "Eased for power",
+      "eased_depower": "Eased to depower",
+      "well_eased": "Well eased",
+      "full_out": "Full out",
+      "ready_dump": "Ready to dump",
+      "dump_immediately": "DUMP IMMEDIATELY",
+      "ease_reduce_heel": "Ease to reduce heel",
+      "centered": "Centered",
+      "centered_windward": "Centered or slightly windward",
+      "down": "Down",
+      "down_leeward": "Down to leeward",
+      "all_down": "All the way down",
+      "full_leeward": "Full leeward",
+      "off": "Off",
+      "light": "Light",
+      "moderate": "Moderate",
+      "firm_heavy_air": "Firm in heavy air",
+      "firm_twist": "Firm to control twist",
+      "tight_flatten": "Tight to flatten entry",
+      "tight_twist": "Tight to prevent twist",
+      "tight_critical": "Tight — CRITICAL safety",
+      "very_tight": "Very tight",
+      "max_flat": "Maximum — sail very flat",
+      "loose": "Loose",
+      "loose_draft": "Loose for draft",
+      "forward": "Forward",
+      "middle": "Middle",
+      "aft": "Aft",
+      "slightly_eased": "Slightly eased",
+      "eased_poled": "Eased or poled out",
+      "poled_or_furled": "Poled out or furled",
+      "goosewinged_or_furled": "Goosewinged or furled",
+      "mandatory": "MANDATORY",
+      "recommended": "Recommended",
+      "none": "N/A",
+      "consider": "Consider",
+      "consider_light": "Consider in light air",
+      "recommended_symmetric": "Recommended (symmetric)"
+    },
+
+    "selection": {
+      "genoa": "Genoa",
+      "genoa_full": "Full genoa (145%)",
+      "genoa_partial": "Partially furled genoa (135%)",
+      "jib": "Jib",
+      "jib_100": "Furled jib (100%)",
+      "stormJib": "Storm jib",
+      "storm_jib_inner": "Storm jib on inner stay",
+      "main_full": "Full main",
+      "reef_1": "1st reef",
+      "reef_2": "2nd reef",
+      "reef_3": "3rd reef",
+      "trysail": "Trysail",
+      "spinnaker": "Asymmetric spinnaker",
+      "spinnaker_light": "Light air spinnaker"
+    },
+
+    "advice": {
+      "reef_needed": "Reefing recommended",
+      "reduce_heel": "Reduce heel angle",
+      "settings_ok": "Sail settings are optimal",
+      "close_hauled_light": "Close-hauled in light air: open the leech, ease cunningham and vang. Move crew forward.",
+      "close_hauled_fresh": "Close-hauled in fresh wind: tension cunningham, tighten outhaul, drop traveler to leeward.",
+      "beam_reach_general": "Beam reach: ease mainsheet to spreaders. Adjust vang to control twist.",
+      "running_safety": "Running: preventer is MANDATORY. Risk of accidental gybe.",
+      "gust_preparation": "Gusts at {gustFactor}% of mean wind. Keep a hand on the traveler, ready to ease.",
+      "excessive_heel": "Excessive heel at {heel}°! Ease the main, drop the traveler. Consider reefing.",
+      "storm_config": "Gale conditions: storm jib and deep-reefed main. Secure the deck. Close all hatches.",
+      "preventer_rig": "Rig the preventer.",
+      "prepare_reef_gusty": "Gusty conditions — prepare to reef.",
+      "keel_raise_shallow": "Shallow water! Raise the keel. Draft reduced to {draftUp}m.",
+      "keel_lower_offshore": "Offshore: lower the keel for stability. Draft {draftDown}m.",
+      "keel_lower_heavy_weather": "Heavy weather: keel DOWN is MANDATORY for stability."
+    }
+  },
+
+  "course": {
+    "maintain": "Current course is optimal, maintain heading.",
+    "alter": "Alter course to {heading}°.",
+    "tack": "Tack now, new heading {heading}° ({cardinal}). VMG improvement {improvement} knots.",
+    "gybe": "Gybe now, new heading {heading}° ({cardinal}). Watch the boom.",
+    "no_improvement": "No significant improvement available.",
+    "advice": {
+      "low_efficiency": "Performance at {efficiency}% of polar. Check sail trim.",
+      "pinching": "You are pinching too high. Bear away 5° for better VMG.",
+      "dead_run_vmg": "Dead run: sail a VMG course at {optAngle}° TWA with gybes for better progress.",
+      "layline_tack": "Tacking layline approaching. Tack when mark bearing reaches {heading}°.",
+      "wind_shift": "Wind from {cardinal} at {speed} knots. Watch for lifts to tack on the favored shift."
+    }
+  },
+
+  "ais": {
+    "no_targets": "No AIS targets in range.",
+    "summary": "{total} AIS targets, {danger} danger, {caution} caution.",
+    "risk": {
+      "danger": "DANGER",
+      "caution": "CAUTION",
+      "watch": "WATCH",
+      "safe": "SAFE"
+    },
+    "colregs": {
+      "head_on": "Head-on collision course",
+      "crossing_give_way": "Crossing — YOU must give way (starboard priority)",
+      "crossing_stand_on": "Crossing — maintain your course (stand-on vessel)",
+      "overtaking": "Overtaking — overtaking vessel must keep clear",
+      "being_overtaken": "Being overtaken — maintain course and speed"
+    },
+    "alert": {
+      "danger_vessel": "COLLISION DANGER: {name} at {distance} NM, CPA {cpa} NM in {tcpa} min. {colregs}. Action: {evasive}.",
+      "caution_vessel": "CAUTION: {name} at {distance} NM, CPA {cpa} NM in {tcpa} min. Monitor closely.",
+      "evasive": {
+        "alter_starboard": "Alter course to starboard",
+        "maintain_course": "Maintain course and speed",
+        "slow_down": "Reduce speed",
+        "give_way": "Give way"
+      }
+    }
+  },
+
+  "alerts": {
+    "generic": "Alert: {message}. Value: {value}",
+    "depth": "Depth alert: {value} meters",
+    "wind": "Wind alert: {value} knots",
+    "battery": "Battery alert: {value} volts",
+    "engine": "Engine alert: {value}",
+    "temperature": "Temperature alert: {value}",
+    "no_alerts": "No active alerts",
+    "count": "{count} active alerts"
+  },
+
+  "tides": {
+    "high": "High tide",
+    "low": "Low tide",
+    "rising": "Rising",
+    "falling": "Falling",
+    "unknown": "Unknown",
+    "next": "Next {type} at {time}"
+  },
+
+  "logbook": {
+    "no_entries": "No logbook entries found to analyze",
+    "analysis_count": "Analyzed {count} logbook entries",
+    "distance": "Total distance covered",
+    "avg_speed": "Average speed",
+    "engine_hours": "Engine runtime",
+    "wind_increasing": "Wind has been increasing",
+    "monitor_weather": "Monitor weather forecasts closely",
+    "engine_maintenance": "Consider scheduling engine maintenance",
+    "entry_frequency": "Consider making more frequent logbook entries",
+    "memory_note": "System note: {note}"
+  },
+
+  "reports": {
+    "weather": "Weather",
+    "tides": "Tides",
+    "sail": "Sail",
+    "tanks": "Tanks",
+    "batteries": "Batteries",
+    "tide_next": "Next {type} at {time}",
+    "recommendations_count": "{count} recommendations",
+    "tanks_critical": "{count} critical",
+    "tanks_low": "{count} low",
+    "tanks_good": "All levels good",
+    "batteries_attention": "{count} need attention",
+    "batteries_good": "All levels good"
+  },
+
+  "units": {
+    "knots": "knots",
+    "knots_abbr": "kts",
+    "meters": "meters",
+    "nautical_miles": "nautical miles",
+    "nm_abbr": "NM",
+    "hpa": "hPa",
+    "degrees": "degrees",
+    "hours": "hours",
+    "minutes": "minutes"
+  }
+}

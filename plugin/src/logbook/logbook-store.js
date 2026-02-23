@@ -1,0 +1,324 @@
+/**
+ * src/logbook/logbook-store.js
+ *
+ * Local JSON file-based logbook storage.
+ * Used as fallback when the @meri-imperiumi/signalk-logbook plugin is absent.
+ * Also used as the backing store when registered as a Signal K Resource Provider
+ * for the custom 'logbooks' resource type.
+ *
+ * Storage layout:
+ *   <dataDir>/ocearo-logbook/
+ *     index.json          — { [uuid]: { datetime, title, category } }
+ *     entries/
+ *       <uuid>.json       — full logbook entry
+ *
+ * Fuel log entries are stored separately:
+ *   <dataDir>/ocearo-logbook/fuel-log.json  — array of fuel refill records
+ */
+
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+class LogbookStore {
+    /**
+     * @param {object} app  Signal K app object
+     */
+    constructor(app) {
+        this.app = app;
+        this._baseDir = path.join(app.getDataDirPath(), 'ocearo-logbook');
+        this._entriesDir = path.join(this._baseDir, 'entries');
+        this._indexPath = path.join(this._baseDir, 'index.json');
+        this._fuelLogPath = path.join(this._baseDir, 'fuel-log.json');
+        this._index = {};
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Initialisation
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Ensure directories exist and load the index.
+     */
+    init() {
+        try {
+            if (!fs.existsSync(this._baseDir)) {
+                fs.mkdirSync(this._baseDir, { recursive: true });
+            }
+            if (!fs.existsSync(this._entriesDir)) {
+                fs.mkdirSync(this._entriesDir, { recursive: true });
+            }
+            this._loadIndex();
+            this.app.debug(`LogbookStore initialised — ${Object.keys(this._index).length} entries`);
+        } catch (err) {
+            this.app.error('LogbookStore init error:', err.message);
+            throw err;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Resource Provider interface (listResources / getResource / setResource / deleteResource)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * List logbook entries, optionally filtered by query params.
+     * Supports: startDate, endDate, limit, category
+     * @param {object} params  query parameters from the Resources API
+     * @returns {Promise<object>}  map of uuid → entry summary
+     */
+    listResources(params) {
+        return new Promise((resolve, reject) => {
+            try {
+                const { startDate, endDate, limit, category } = params || {};
+                let entries = Object.entries(this._index);
+
+                if (startDate) {
+                    entries = entries.filter(([, meta]) => meta.datetime >= startDate);
+                }
+                if (endDate) {
+                    entries = entries.filter(([, meta]) => meta.datetime <= endDate);
+                }
+                if (category) {
+                    entries = entries.filter(([, meta]) => meta.category === category);
+                }
+
+                // Sort descending by datetime
+                entries.sort((a, b) => b[1].datetime.localeCompare(a[1].datetime));
+
+                if (limit) {
+                    entries = entries.slice(0, parseInt(limit, 10));
+                }
+
+                resolve(Object.fromEntries(entries));
+            } catch (err) {
+                reject(new Error(`LogbookStore.listResources failed: ${err.message}`));
+            }
+        });
+    }
+
+    /**
+     * Retrieve a single logbook entry by UUID.
+     * @param {string} id   UUID
+     * @param {string} [property]  optional sub-property path
+     * @returns {Promise<object>}
+     */
+    getResource(id, property) {
+        return new Promise((resolve, reject) => {
+            try {
+                const filePath = path.join(this._entriesDir, `${id}.json`);
+                if (!fs.existsSync(filePath)) {
+                    reject(new Error(`Logbook entry not found: ${id}`));
+                    return;
+                }
+                const raw = fs.readFileSync(filePath, 'utf8');
+                let entry = JSON.parse(raw);
+
+                if (property) {
+                    const parts = property.split('.');
+                    for (const part of parts) {
+                        if (entry && typeof entry === 'object') {
+                            entry = entry[part];
+                        } else {
+                            entry = undefined;
+                            break;
+                        }
+                    }
+                }
+
+                resolve(entry);
+            } catch (err) {
+                reject(new Error(`LogbookStore.getResource failed: ${err.message}`));
+            }
+        });
+    }
+
+    /**
+     * Create or update a logbook entry.
+     * @param {string} id     UUID (generated by caller for POST, provided for PUT)
+     * @param {object} value  entry data
+     * @returns {Promise<void>}
+     */
+    setResource(id, value) {
+        return new Promise((resolve, reject) => {
+            try {
+                const entry = {
+                    ...value,
+                    id,
+                    updatedAt: new Date().toISOString()
+                };
+
+                if (!entry.datetime) {
+                    entry.datetime = entry.updatedAt;
+                }
+
+                // Write full entry
+                const filePath = path.join(this._entriesDir, `${id}.json`);
+                fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), 'utf8');
+
+                // Update index
+                this._index[id] = {
+                    datetime: entry.datetime,
+                    title: entry.title || entry.text?.substring(0, 60) || 'Logbook entry',
+                    category: entry.category || 'navigation'
+                };
+                this._saveIndex();
+
+                resolve();
+            } catch (err) {
+                reject(new Error(`LogbookStore.setResource failed: ${err.message}`));
+            }
+        });
+    }
+
+    /**
+     * Delete a logbook entry by UUID.
+     * @param {string} id
+     * @returns {Promise<void>}
+     */
+    deleteResource(id) {
+        return new Promise((resolve, reject) => {
+            try {
+                const filePath = path.join(this._entriesDir, `${id}.json`);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+                delete this._index[id];
+                this._saveIndex();
+                resolve();
+            } catch (err) {
+                reject(new Error(`LogbookStore.deleteResource failed: ${err.message}`));
+            }
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Convenience helpers (used by LogbookManager)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Generate a new UUID v4.
+     * @returns {string}
+     */
+    generateId() {
+        return crypto.randomUUID ? crypto.randomUUID() : _uuidFallback();
+    }
+
+    /**
+     * Add a new entry and return its UUID.
+     * @param {object} entry
+     * @returns {Promise<string>}  the new UUID
+     */
+    async addEntry(entry) {
+        const id = this.generateId();
+        await this.setResource(id, entry);
+        return id;
+    }
+
+    /**
+     * Return all entries as an array, sorted descending by datetime.
+     * @param {object} [params]
+     * @returns {Promise<Array>}
+     */
+    async getAllEntries(params) {
+        const map = await this.listResources(params);
+        const ids = Object.keys(map);
+        const entries = [];
+        for (const id of ids) {
+            try {
+                const entry = await this.getResource(id);
+                entries.push(entry);
+            } catch (e) {
+                this.app.warn(`LogbookStore: could not read entry ${id}: ${e.message}`);
+            }
+        }
+        return entries;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Fuel log (separate from logbook entries)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Append a fuel refill record.
+     * @param {object} record  { liters, cost, additive, engineHours, ... }
+     * @returns {Promise<string>}  record id
+     */
+    async addFuelEntry(record) {
+        const entries = this._loadFuelLog();
+        const id = this.generateId();
+        const entry = {
+            ...record,
+            id,
+            datetime: record.datetime || new Date().toISOString()
+        };
+        entries.push(entry);
+        this._saveFuelLog(entries);
+        return id;
+    }
+
+    /**
+     * Return all fuel log entries.
+     * @returns {Promise<Array>}
+     */
+    async getFuelEntries() {
+        return this._loadFuelLog();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Private helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    _loadIndex() {
+        try {
+            if (fs.existsSync(this._indexPath)) {
+                this._index = JSON.parse(fs.readFileSync(this._indexPath, 'utf8'));
+            } else {
+                this._index = {};
+            }
+        } catch (err) {
+            this.app.warn('LogbookStore: could not load index, starting fresh:', err.message);
+            this._index = {};
+        }
+    }
+
+    _saveIndex() {
+        try {
+            fs.writeFileSync(this._indexPath, JSON.stringify(this._index, null, 2), 'utf8');
+        } catch (err) {
+            this.app.error('LogbookStore: could not save index:', err.message);
+        }
+    }
+
+    _loadFuelLog() {
+        try {
+            if (fs.existsSync(this._fuelLogPath)) {
+                return JSON.parse(fs.readFileSync(this._fuelLogPath, 'utf8'));
+            }
+        } catch (err) {
+            this.app.warn('LogbookStore: could not load fuel log:', err.message);
+        }
+        return [];
+    }
+
+    _saveFuelLog(entries) {
+        try {
+            fs.writeFileSync(this._fuelLogPath, JSON.stringify(entries, null, 2), 'utf8');
+        } catch (err) {
+            this.app.error('LogbookStore: could not save fuel log:', err.message);
+        }
+    }
+}
+
+/**
+ * UUID v4 fallback for Node < 14.17
+ * @returns {string}
+ */
+function _uuidFallback() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+module.exports = LogbookStore;

@@ -1,13 +1,17 @@
-/*
+/**
  * Orchestrator Brain Module
- * Manages scheduling, analysis, decision making, and AI logbook integration
+ *
+ * Central coordinator for scheduled analyses, alert processing,
+ * AIS collision monitoring, barometric pressure watch, navigation
+ * mode management, and AI-powered logbook integration.
  */
-const { i18n } = require('../common');
 const AlertAnalyzer = require('../analyses/alert');
 const MeteoAnalyzer = require('../analyses/meteo');
 const SailCourseAnalyzer = require('../analyses/sailcourse');
 const SailSettingsAnalyzer = require('../analyses/sailsettings');
+const AISAnalyzer = require('../analyses/ais');
 const LogbookManager = require('../logbook');
+const AnchorPlugin = require('../anchor/anchor-plugin');
 
 class OrchestratorBrain {
     constructor(app, config, components) {
@@ -21,22 +25,29 @@ class OrchestratorBrain {
         this.memoryManager = components.memoryManager;
         this.llm = components.llm;
         this.voice = components.voice;
+        this.cm = components.configManager;
         
         // Logbook integration
         this.logbookManager = components.logbookManager;
+
+        // Anchor plugin
+        this.anchorPlugin = new AnchorPlugin(app, 'ocearo-core', config);
+        this.anchorPlugin.onModeChange(mode => this.updateMode(mode));
         
-        // Analysis modules
-        this.alertAnalyzer = new AlertAnalyzer(app, config, this.llm, this.memoryManager);
+        // Analysis modules — pass ConfigManager to all analyzers
+        this.alertAnalyzer = new AlertAnalyzer(app, config, this.llm, this.memoryManager, this.cm);
         this.meteoAnalyzer = new MeteoAnalyzer(app, config, this.llm, 
-            this.weatherProvider, this.tidesProvider);
-        this.sailCourseAnalyzer = new SailCourseAnalyzer(app, config, this.llm);
-        this.sailSettingsAnalyzer = new SailSettingsAnalyzer(app, config, this.llm);
+            this.weatherProvider, this.tidesProvider, this.cm);
+        this.sailCourseAnalyzer = new SailCourseAnalyzer(app, config, this.llm, this.cm);
+        this.sailSettingsAnalyzer = new SailSettingsAnalyzer(app, config, this.llm, this.cm);
+        this.aisAnalyzer = new AISAnalyzer(app, config, this.voice, this.cm);
         
         // Scheduling intervals (ms)
         this.schedules = {
             alertCheck: (config.schedules?.alertCheck || 30) * 1000,
             weatherUpdate: (config.schedules?.weatherUpdate || 300) * 1000,
             sailAnalysis: (config.schedules?.sailAnalysis || 120) * 1000,
+            aisCheck: (config.schedules?.aisCheck || 15) * 1000,
             memoryPersist: (config.schedules?.memoryPersist || 600) * 1000,
             navPoint: (config.schedules?.navPointMinutes || 30) * 60 * 1000,
             hourlyLogbook: 60 * 60 * 1000 // Fixed at 1 hour
@@ -50,8 +61,20 @@ class OrchestratorBrain {
             mode: config.mode || 'sailing',
             lastWeatherAnalysis: null,
             lastSailAnalysis: null,
+            lastAISCheck: null,
+            lastPressureTrend: null,
             alertsActive: 0,
+            aisTargetsInRange: 0,
             started: false
+        };
+
+        // Logbook memory — persistent context loaded from logbook on startup
+        this.logbookMemory = {
+            lastWeatherBaseline: null,
+            performanceBaseline: null,
+            recentAlertsSummary: null,
+            keelPosition: null,
+            loadedAt: null
         };
     }
 
@@ -67,25 +90,28 @@ class OrchestratorBrain {
         this.app.debug('Starting Orchestrator Brain');
         this.state.started = true;
       
+        // Load persistent context from logbook
+        await this._loadLogbookMemory();
+
+        // Start anchor plugin (loads persisted state, resumes monitoring if needed)
+        this.anchorPlugin.start();
+
         // Initialize components
         this.initializeSchedules();
-        
         
         // Perform initial analyses
         await this.performInitialChecks();
         
         // Log startup to logbook
         await this.logSystemEvent('startup', {
-            summary: 'Ocearo Jarvis AI system started successfully',
+            summary: 'System started',
             mode: this.state.mode,
+            boat: this.cm?.boatValue('name', 'unknown'),
             confidence: 1.0
         });
         
-        // Announce startup
-        const language = this.config.language || 'en';
-        const personality = this.config.personality || 'default';
-        const translations = i18n.translations[language] || i18n.translations.en;
-        const greeting = translations.startup?.[personality] || translations.startup.default;
+        // Announce startup via ConfigManager
+        const greeting = this.cm ? this.cm.getStartupMessage() : 'System ready.';
         this.voice.speak(greeting);
         
         // Schedule startup analysis if enabled
@@ -110,20 +136,23 @@ class OrchestratorBrain {
         Object.values(this.timers).forEach(timer => clearInterval(timer));
         this.timers = {};
         
+        // Stop anchor plugin
+        this.anchorPlugin.stop();
+
         // Persist memory
         await this.memoryManager.persistData();
         
+        // Save brain state to logbook before shutdown
+        await this._storeLogbookMemory();
+
         // Log shutdown to logbook
         await this.logSystemEvent('shutdown', {
-            summary: 'Ocearo Jarvis AI system shutdown gracefully',
+            summary: 'System shutdown',
             confidence: 1.0
         });
         
-        // Announce shutdown
-        const language = this.config.language || 'en';
-        const personality = this.config.personality || 'default';
-        const translations = i18n.translations[language] || i18n.translations.en;
-        const farewell = translations.shutdown?.[personality] || translations.shutdown.default || 'Shutting down.';
+        // Announce shutdown via ConfigManager
+        const farewell = this.cm ? this.cm.getShutdownMessage() : 'Shutting down.';
         this.voice.speak(farewell);
     }
 
@@ -152,6 +181,13 @@ class OrchestratorBrain {
         this.timers.memoryPersist = setInterval(() => {
             this.memoryManager.persistData();
         }, this.schedules.memoryPersist);
+        
+        // AIS collision monitoring (every 15 seconds by default)
+        if (this.config.ais?.enabled !== false) {
+            this.timers.aisCheck = setInterval(() => {
+                this.checkAIS();
+            }, this.schedules.aisCheck);
+        }
         
         // Navigation point updates (every 30 minutes by default)
         this.timers.navPoint = setInterval(() => {
@@ -201,7 +237,7 @@ class OrchestratorBrain {
             // Tide information
             if (startupConfig.includeTides !== false && this.tidesProvider) {
                 try {
-                    analysisResults.tides = await this.tidesProvider.getTideData(vesselData.position);
+                    analysisResults.tides = await this.tidesProvider.getTideData();
                     this.app.debug('Startup tide analysis completed');
                 } catch (error) {
                     this.app.debug('Startup tide analysis failed:', error.message);
@@ -293,9 +329,105 @@ class OrchestratorBrain {
                     this.app.debug('Initial sail analysis failed, continuing:', error.message);
                 });
             }
+
+            // Initial AIS scan (non-blocking)
+            if (this.config.ais?.enabled !== false) {
+                this.checkAIS().catch(error => {
+                    this.app.debug('Initial AIS scan failed, continuing:', error.message);
+                });
+            }
         } catch (error) {
             this.app.debug('Initial vessel data fetch failed, skipping initial checks:', error.message);
         }
+    }
+
+    /**
+     * Check AIS targets for collision risks.
+     * Runs frequently (every 15s) to detect developing situations early.
+     */
+    async checkAIS() {
+        if (!this.state.started) return;
+
+        try {
+            const vesselData = this.signalkProvider.getVesselData();
+            const result = this.aisAnalyzer.checkCollisionRisks(vesselData);
+
+            this.state.aisTargetsInRange = result.totalInRange;
+            this.state.lastAISCheck = {
+                dangerCount: result.dangerCount,
+                cautionCount: result.cautionCount,
+                totalInRange: result.totalInRange,
+                timestamp: new Date().toISOString()
+            };
+
+            if (result.alerts.length > 0) {
+                // Voice announcement for collision risks
+                if (result.speech) {
+                    this.voice.speak(result.speech, { priority: 'critical' });
+                }
+
+                // Try LLM-enriched analysis for danger-level targets
+                const dangerTargets = result.targets.filter(t => t.risk === 'danger');
+                if (dangerTargets.length > 0) {
+                    try {
+                        const llmAnalysis = await this.llm.analyzeCollisionRisk(dangerTargets, {
+                            speed: this._extractSOG(vesselData),
+                            heading: this._extractCOG(vesselData)
+                        });
+                        if (llmAnalysis) {
+                            this.voice.speak(llmAnalysis, { priority: 'critical' });
+                        }
+                    } catch (error) {
+                        this.app.debug('LLM AIS analysis skipped:', error.message);
+                    }
+                }
+
+                // Log collision risks to logbook
+                for (const alert of result.alerts) {
+                    if (alert.severity === 'alarm') {
+                        await this.logAnalysisToLogbook('safety', {
+                            summary: alert.message,
+                            confidence: 0.95,
+                            aisTarget: alert.target,
+                            cpa: alert.cpa,
+                            tcpa: alert.tcpa,
+                            colregs: alert.colregs
+                        });
+                    }
+                }
+
+                // Store in memory
+                this.memoryManager.addAlert({
+                    type: 'ais_collision_risk',
+                    category: 'safety',
+                    targets: result.alerts.map(a => a.target),
+                    dangerCount: result.dangerCount,
+                    timestamp: new Date().toISOString()
+                });
+            }
+
+            // Periodic cleanup of AIS announcement cooldowns
+            this.aisAnalyzer.cleanup();
+
+        } catch (error) {
+            this.app.debug('AIS check error:', error.message);
+        }
+    }
+
+    /**
+     * Extract SOG in knots from raw vessel data.
+     */
+    _extractSOG(vesselData) {
+        const sog = vesselData?.navigation?.speedOverGround;
+        return typeof sog === 'number' ? sog * 1.94384 : null;
+    }
+
+    /**
+     * Extract COG in degrees from raw vessel data.
+     */
+    _extractCOG(vesselData) {
+        const cog = vesselData?.navigation?.courseOverGroundTrue;
+        return typeof cog === 'number' ? cog * (180 / Math.PI) : null;
     }
 
     /**
@@ -367,7 +499,7 @@ class OrchestratorBrain {
 
             // Check for significant changes
             if (this.shouldAnnounceWeather(analysis)) {
-                this.voice.speak(analysis.speech);
+                this.voice.speak(analysis.analysis?.speech || analysis.speech);
             }
 
             // Store significant weather events
@@ -403,9 +535,7 @@ class OrchestratorBrain {
         
         try {
             const vesselData = await this.signalkProvider.getVesselData();
-            const language = this.config.language || 'en';
             
-            // Extract navigation data
             const nav = vesselData.navigation || {};
             const env = vesselData.environment || {};
             
@@ -419,16 +549,12 @@ class OrchestratorBrain {
                 ? env.depth.belowKeel.toFixed(1) 
                 : null;
             
-            // Build navigation point message
             let message;
             if (speed !== null && course !== null && depth !== null) {
-                message = i18n.localize(language, 'nav_point_update', {
-                    speed,
-                    course,
-                    depth
-                });
+                const ktsLabel = this.cm.t('units.knots_abbr');
+                message = `SOG ${speed} ${ktsLabel}, COG ${course}°, ${depth}m`;
             } else {
-                message = i18n.t('nav_point_no_data', language);
+                message = this.cm.t('general.no_data');
             }
             
             // Speak the navigation point if configured
@@ -496,11 +622,7 @@ class OrchestratorBrain {
                 : 'Unknown';
             
             // Build summary
-            const summary = i18n.localize(language, 'hourly_log_summary', {
-                position: positionStr,
-                speed,
-                course
-            });
+            const summary = `${positionStr}, SOG ${speed}, COG ${course}°`;
             
             // Create logbook entry
             const logEntry = {
@@ -524,7 +646,7 @@ class OrchestratorBrain {
             
             // Optionally speak confirmation
             if (this.config.schedules?.speakHourlyLog) {
-                this.voice.speak(i18n.t('hourly_log_entry', language), { priority: 'low' });
+                this.voice.speak(this.cm.t('logbook.memory_note', { note: 'hourly' }), { priority: 'low' });
             }
             
             this.app.debug('Hourly logbook entry created');
@@ -567,7 +689,7 @@ class OrchestratorBrain {
                 
                 // Announce course changes if recommended
                 if (courseAnalysis.recommended.changeWorthwhile) {
-                    const message = courseAnalysis.analysis || 
+                    const message = courseAnalysis.analysis?.speech || courseAnalysis.analysis || 
                         courseAnalysis.recommended.recommendation.message;
                     this.voice.speak(message);
                 }
@@ -591,7 +713,7 @@ class OrchestratorBrain {
             );
             
             if (criticalAdjustments.length > 0) {
-                const settingsMessage = settingsAnalysis.analysis || 
+                const settingsMessage = settingsAnalysis.analysis?.speech || settingsAnalysis.analysis || 
                     criticalAdjustments.map(adj => adj.action).join('. ');
                 this.voice.speak(settingsMessage);
 
@@ -624,7 +746,7 @@ class OrchestratorBrain {
                         vesselData,
                         context
                     );
-                    this.voice.speak(weatherAnalysis.speech, { priority: 'high' });
+                    this.voice.speak(weatherAnalysis.analysis?.speech || weatherAnalysis.speech, { priority: 'high' });
                     
                     // Always log manual weather requests
                     await this.logAnalysisToLogbook('weather', {
@@ -638,16 +760,36 @@ class OrchestratorBrain {
                 case 'sail': {
                     await this.analyzeSailing();
                     
+                    const sailResult = this.state.lastSailAnalysis;
+
                     // Log manual sail analysis
-                    if (this.state.lastSailAnalysis) {
+                    if (sailResult) {
                         await this.logAnalysisToLogbook('navigation', {
-                            ...this.state.lastSailAnalysis,
+                            ...sailResult,
                             manual: true,
                             requestType: 'manual_sail_analysis'
                         });
                     }
-                    
-                    return this.state.lastSailAnalysis;
+
+                    if (!sailResult) {
+                        const fallback = {
+                            analysis: this.cm.t('general.analysis_failed') || 'Sail analysis could not be completed. Check wind data and vessel mode.',
+                            speech: this.cm.t('general.analysis_failed') || 'Sail analysis could not be completed.',
+                            timestamp: new Date().toISOString(),
+                            settings: { adjustments: [] },
+                            course: null
+                        };
+                        this.voice.speak(fallback.speech, { priority: 'normal' });
+                        return fallback;
+                    }
+
+                    // Speak the sail analysis result
+                    const sailSpeech = sailResult.settings?.analysis?.speech || sailResult.course?.analysis?.speech;
+                    if (sailSpeech) {
+                        this.voice.speak(sailSpeech, { priority: 'high' });
+                    }
+
+                    return sailResult;
                 }
                 case 'alerts': {
                     const alerts = this.memoryManager.getRecentAlerts(1);
@@ -663,6 +805,25 @@ class OrchestratorBrain {
                     });
                     
                     return { alerts, summary };
+                }
+                case 'ais': {
+                    const vesselDataAIS = this.signalkProvider.getVesselData();
+                    const aisResult = this.aisAnalyzer.checkCollisionRisks(vesselDataAIS);
+                    let aisSpeech;
+                    if (aisResult.totalInRange === 0) {
+                        aisSpeech = this.cm.t('ais.no_targets');
+                    } else {
+                        aisSpeech = this.cm.t('ais.summary', {
+                            total: aisResult.totalInRange,
+                            danger: aisResult.dangerCount,
+                            caution: aisResult.cautionCount
+                        });
+                        if (aisResult.speech) {
+                            aisSpeech += ' ' + aisResult.speech;
+                        }
+                    }
+                    this.voice.speak(aisSpeech, { priority: 'high' });
+                    return { ...aisResult, speech: aisSpeech };
                 }
                 case 'status': {
                     const status = this.getSystemStatus();
@@ -705,27 +866,25 @@ class OrchestratorBrain {
                     throw new Error(`Unknown analysis type: ${type}`);
             }
         } catch (error) {
-            // Handle LLM-related errors more gracefully
             if (error.message.includes('LLM service not available')) {
                 this.app.debug(`Manual analysis ${type} skipped - LLM service not available`);
-                this.voice.speak('Analysis requires AI assistance which is currently unavailable. Please check Ollama service.', { priority: 'high' });
+                this.voice.speak(this.cm.t('general.ai_unavailable'), { priority: 'high' });
                 throw new Error('AI service unavailable');
             } else {
                 this.app.debug(`Manual analysis ${type} failed:`, error.message);
-                const language = this.config.language || 'en';
-                this.voice.speak(i18n.localize(language, 'analysis_failed'));
+                this.voice.speak(this.cm.t('general.analysis_failed'));
                 throw error;
             }
         }
     }
 
     /**
-     * Update operating mode
+     * Update operating mode.
+     * Notifies the anchor plugin so it can manage alarm lifecycle and
+     * emit mode-change warnings if the anchor is still deployed.
      */
-    async updateMode(mode) {
-        const language = this.config.language || 'en';
+    updateMode(mode) {
         const validModes = ['sailing', 'anchored', 'motoring', 'moored', 'racing'];
-        const localizedValidModes = validModes.map(m => i18n.t(`vessel_mode.${m}`, language));
 
         if (!validModes.includes(mode)) {
             throw new Error(`Invalid mode: ${mode}. Valid modes are: ${validModes.join(', ')}`);
@@ -733,37 +892,12 @@ class OrchestratorBrain {
         
         const previousMode = this.state.mode;
         this.state.mode = mode;
-        
-        // Handle anchor position based on mode changes
+
+        // Delegate anchor lifecycle to AnchorPlugin
         try {
-            if (mode === 'anchored' && previousMode !== 'anchored') {
-                // Set anchor position when entering anchored mode
-                const vesselData = await this.signalkProvider.getVesselData();
-                if (vesselData.navigation && vesselData.navigation.position) {
-                    const anchorPosition = {
-                        latitude: vesselData.navigation.position.latitude,
-                        longitude: vesselData.navigation.position.longitude,
-                        timestamp: new Date().toISOString()
-                    };
-                    
-                    const success = this.signalkProvider.writePath('navigation.anchor.position', anchorPosition);
-                    if (success) {
-                        this.app.debug(`Anchor position set: ${anchorPosition.latitude}, ${anchorPosition.longitude}`);
-                    } else {
-                        this.app.debug('Failed to set anchor position');
-                    }
-                }
-            } else if (previousMode === 'anchored' && mode !== 'anchored') {
-                // Reset anchor position when leaving anchored mode
-                const success = this.signalkProvider.writePath('navigation.anchor.position', null);
-                if (success) {
-                    this.app.debug('Anchor position reset (anchor hoisted)');
-                } else {
-                    this.app.debug('Failed to reset anchor position');
-                }
-            }
+            this.anchorPlugin.handleModeChange(mode);
         } catch (error) {
-            this.app.debug('Error handling anchor position during mode change:', error.message);
+            this.app.debug('Error in anchor mode change handler:', error.message);
         }
         
         // Adjust schedules based on mode
@@ -782,16 +916,14 @@ class OrchestratorBrain {
         
         // Log mode change
         this.logSystemEvent('mode_change', {
-            summary: `Operating mode changed from ${previousMode} to ${mode}`,
+            summary: `Mode: ${previousMode} -> ${mode}`,
             previousMode,
             newMode: mode,
             confidence: 1.0
         });
         
-        // Get translated mode name using nested key support
-        const localizedMode = i18n.t(`vessel_mode.${mode}`, language);
-        const message = i18n.localize(language, 'mode_changed', { mode: localizedMode });
-        this.voice.speak(message);
+        const localizedMode = this.cm.t(`mode.${mode}`);
+        this.voice.speak(this.cm.t('mode.changed', { mode: localizedMode }));
     }
 
     /**
@@ -801,7 +933,7 @@ class OrchestratorBrain {
         try {
             // Prepare analysis data for logbook
             const analysisData = {
-                summary: result.speech || result.analysis || result.summary || 'Analysis completed',
+                summary: result.analysis?.text || result.text || result.analysis?.speech || result.speech || result.summary || 'Analysis completed',
                 confidence: result.confidence || this.calculateConfidence(result),
                 recommendations: this.extractRecommendations(result),
                 metrics: this.extractMetrics(result),
@@ -941,19 +1073,47 @@ class OrchestratorBrain {
 
 
     /**
-     * Check if weather should be announced
+     * Check if weather should be announced.
+     * Enhanced with Beaufort force changes and pressure trend awareness.
      */
     shouldAnnounceWeather(analysis) {
         // Always announce on first analysis
         if (!this.state.lastWeatherAnalysis) return true;
         
         const prev = this.state.lastWeatherAnalysis;
+        const prevAssessment = prev.assessment || {};
+        const currAssessment = analysis.assessment || {};
         
-        // Check for significant changes
-        if (analysis.assessment.windStrength !== prev.assessment.windStrength) return true;
-        if (analysis.assessment.seaState !== prev.assessment.seaState) return true;
-        if (analysis.assessment.alerts.length > prev.assessment.alerts.length) return true;
-        if (analysis.assessment.trend.overall !== prev.assessment.trend.overall) return true;
+        // Beaufort force changed
+        if (currAssessment.beaufort?.force !== prevAssessment.beaufort?.force) return true;
+        
+        // Wind strength category changed
+        if (currAssessment.windStrength !== prevAssessment.windStrength) return true;
+        
+        // Sea state changed
+        if (currAssessment.seaState !== prevAssessment.seaState) return true;
+        
+        // New alerts appeared
+        if ((currAssessment.alerts?.length || 0) > (prevAssessment.alerts?.length || 0)) return true;
+        
+        // Overall trend changed
+        if (currAssessment.trend?.overall !== prevAssessment.trend?.overall) return true;
+        
+        // Pressure trend changed significantly
+        if (currAssessment.pressure?.trend !== prevAssessment.pressure?.trend) {
+            const significantChanges = ['falling_fast', 'rising_fast', 'falling'];
+            if (significantChanges.includes(currAssessment.pressure?.trend)) return true;
+        }
+        
+        // Squall risk escalated
+        if (currAssessment.squallRisk === 'high' && prevAssessment.squallRisk !== 'high') return true;
+        
+        // Wind-against-tide danger appeared
+        if (currAssessment.windAgainstTide?.danger && !prevAssessment.windAgainstTide?.danger) return true;
+        
+        // Expert advice appeared where there was none
+        if ((currAssessment.expertAdvice?.length || 0) > 0 && 
+            (prevAssessment.expertAdvice?.length || 0) === 0) return true;
         
         return false;
     }
@@ -975,9 +1135,10 @@ class OrchestratorBrain {
     }
 
     /**
-     * Get system status
+     * Get system status including AIS, pressure and anchor data.
      */
     getSystemStatus() {
+        const weatherAssessment = this.state.lastWeatherAnalysis?.assessment;
         return {
             mode: this.state.mode,
             started: this.state.started,
@@ -987,34 +1148,66 @@ class OrchestratorBrain {
             llmConnected: this.llm.isConnected(),
             voiceEnabled: this.voice.enabled,
             memorySize: this.memoryManager.getStatistics(),
-            logbookConnected: this.logbookManager.isConnected
+            logbookConnected: this.logbookManager.isConnected,
+            logbookBackend: this.logbookManager.backend,
+            ais: this.state.lastAISCheck || { totalInRange: 0 },
+            anchor: {
+                state: this.anchorPlugin.getState(),
+                currentRadius: this.anchorPlugin.getCurrentRadius(),
+                dragging: this.anchorPlugin.isDropped() &&
+                    this.anchorPlugin.getCurrentRadius() !== null &&
+                    this.anchorPlugin.getCurrentRadius() > 0
+            },
+            weather: weatherAssessment ? {
+                beaufort: weatherAssessment.beaufort?.force,
+                windStrength: weatherAssessment.windStrength,
+                seaState: weatherAssessment.seaState,
+                pressure: weatherAssessment.pressure,
+                squallRisk: weatherAssessment.squallRisk,
+                trend: weatherAssessment.trend?.overall
+            } : null
         };
     }
 
     /**
-     * Format status message for speech
+     * Format status message for speech, including AIS and weather.
      */
     formatStatusMessage(status) {
-        const language = this.config.language || 'en';
         const parts = [];
         
-        const statusLabel = i18n.t('status_system', language);
-        const activeLabel = status.started ? i18n.t('status_active', language) : i18n.t('status_inactive', language);
-        parts.push(`${statusLabel}: ${activeLabel}`);
-        
-        const modeLabel = i18n.t('status_mode', language);
-        parts.push(`${modeLabel}: ${status.mode}`);
+        const activeLabel = status.started ? this.cm.t('status.active') : this.cm.t('status.inactive');
+        parts.push(`${this.cm.t('status.system')}: ${activeLabel}`);
+        parts.push(`${this.cm.t('status.mode_label')}: ${this.cm.t(`mode.${status.mode}`)}`);
         
         if (status.alertsActive > 0) {
-            parts.push(i18n.localize(language, 'status_alerts_count', { count: status.alertsActive }));
+            parts.push(this.cm.t('status.alerts_count', { count: status.alertsActive }));
+        }
+        
+        if (status.weather) {
+            const bf = status.weather.beaufort;
+            const trend = status.weather.trend;
+            if (bf !== undefined) {
+                const seaState = this.cm.t(`weather.sea_state.${status.weather.seaState}`) || status.weather.seaState;
+                const trendStr = this.cm.t(`weather.trend.${trend}`) || trend || 'stable';
+                parts.push(this.cm.t('status.weather_summary', { beaufort: bf, seaState, trend: trendStr }));
+            }
+            if (status.weather.squallRisk === 'high') {
+                parts.push(this.cm.t('status.squall_risk_high'));
+            }
+        }
+        
+        if (status.ais && status.ais.totalInRange > 0) {
+            parts.push(this.cm.t('status.ais_summary', {
+                total: status.ais.totalInRange,
+                danger: status.ais.dangerCount || 0
+            }));
         }
         
         if (!status.llmConnected) {
-            parts.push(i18n.t('status_ai_offline', language));
+            parts.push(this.cm.t('status.ai_offline'));
         }
-        
         if (!status.logbookConnected) {
-            parts.push(i18n.t('status_logbook_offline', language));
+            parts.push(this.cm.t('status.logbook_offline'));
         }
         
         return parts.join('. ');
@@ -1122,20 +1315,17 @@ class OrchestratorBrain {
      * Generate comprehensive startup report
      */
     generateStartupReport(analysisResults, config) {
-        const language = this.config.language || 'en';
         const parts = [];
         const summary = [];
         
-        // Weather report
         if (analysisResults.weather && config.includeWeatherForecast !== false) {
             const weather = analysisResults.weather;
             if (weather.speech) {
                 parts.push(weather.speech);
-                summary.push(`${i18n.t('report_weather', language)}: ${weather.assessment?.windStrength || 'analyzed'}`);
+                summary.push(`${this.cm.t('reports.weather')}: ${weather.assessment?.windStrength || 'ok'}`);
             }
         }
         
-        // Tide information
         if (analysisResults.tides && config.includeTides !== false) {
             const tides = analysisResults.tides;
             if (tides.next?.high || tides.next?.low) {
@@ -1143,76 +1333,62 @@ class OrchestratorBrain {
                     (tides.next.high.time < tides.next.low.time ? tides.next.high : tides.next.low) :
                     (tides.next.high || tides.next.low);
                 
-                const timeStr = nextTide.time.toLocaleTimeString(language === 'fr' ? 'fr-FR' : 'en-US', { 
-                    hour: '2-digit', minute: '2-digit' 
-                });
+                const dateLocale = this.cm.t('meta.dateLocale') || 'en-US';
+                const timeStr = nextTide.time.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' });
                 const heightStr = `${nextTide.height.toFixed(1)}m`;
-                
-                // Translate tide type (High/Low)
-                const typeKey = `tide_${nextTide.type.toLowerCase()}`;
-                const typeStr = i18n.t(typeKey, language);
+                const typeStr = this.cm.t(`tides.${nextTide.type.toLowerCase()}`);
 
-                parts.push(i18n.localize(language, 'report_tide_next', { type: typeStr, time: `${timeStr}, ${heightStr}` }));
-                summary.push(`${i18n.t('report_tides', language)}: ${typeStr} ${timeStr}`);
+                parts.push(this.cm.t('tides.next', { type: typeStr, time: `${timeStr}, ${heightStr}` }));
+                summary.push(`${this.cm.t('reports.tides')}: ${typeStr} ${timeStr}`);
             }
         }
         
-        // Sail recommendations
         if (analysisResults.sailRecommendations && config.includeSailRecommendations !== false) {
             const sail = analysisResults.sailRecommendations;
             if (sail.adjustments && sail.adjustments.length > 0) {
-                const highPriorityAdjustments = sail.adjustments.filter(adj => adj.priority === 'high');
-                if (highPriorityAdjustments.length > 0) {
-                    // Note: adj.action is internal key, ideally should be localized too but might be English string from analyzer
-                    // Assuming analyzer returns localized string or key? SailSettingsAnalyzer returns hardcoded strings currently.
-                    // But let's focus on the wrapper text first.
-                    parts.push(`${i18n.t('report_sail', language)}: ${highPriorityAdjustments.map(adj => adj.action).join(', ')}`);
-                    const countMsg = i18n.localize(language, 'report_recommendations_count', { count: highPriorityAdjustments.length });
-                    summary.push(`${i18n.t('report_sail', language)}: ${countMsg}`);
+                const highPri = sail.adjustments.filter(adj => adj.priority === 'high');
+                if (highPri.length > 0) {
+                    parts.push(`${this.cm.t('reports.sail')}: ${highPri.map(adj => adj.action).join(', ')}`);
+                    summary.push(`${this.cm.t('reports.sail')}: ${this.cm.t('reports.recommendations_count', { count: highPri.length })}`);
                 }
             }
         }
         
-        // Tank levels
         if (analysisResults.tankLevels && config.includeTankLevels !== false) {
             const tanks = analysisResults.tankLevels;
-            const lowTanks = Object.entries(tanks).filter(([_, tank]) => tank.status === 'low');
             const criticalTanks = Object.entries(tanks).filter(([_, tank]) => tank.level < 10);
+            const lowTanks = Object.entries(tanks).filter(([_, tank]) => tank.status === 'low');
             
             if (criticalTanks.length > 0) {
-                parts.push(`Critical tank levels: ${criticalTanks.map(([id, tank]) => `${tank.type} ${tank.level}%`).join(', ')}`);
-                summary.push(`${i18n.t('report_tanks', language)}: ${i18n.localize(language, 'report_tanks_critical', { count: criticalTanks.length })}`);
+                parts.push(`${this.cm.t('reports.tanks')}: ${criticalTanks.map(([id, tank]) => `${tank.type} ${tank.level}%`).join(', ')}`);
+                summary.push(`${this.cm.t('reports.tanks')}: ${this.cm.t('reports.tanks_critical', { count: criticalTanks.length })}`);
             } else if (lowTanks.length > 0) {
-                parts.push(`Low tank levels: ${lowTanks.map(([id, tank]) => `${tank.type} ${tank.level}%`).join(', ')}`);
-                summary.push(`${i18n.t('report_tanks', language)}: ${i18n.localize(language, 'report_tanks_low', { count: lowTanks.length })}`);
+                summary.push(`${this.cm.t('reports.tanks')}: ${this.cm.t('reports.tanks_low', { count: lowTanks.length })}`);
             } else if (Object.keys(tanks).length > 0) {
-                summary.push(`${i18n.t('report_tanks', language)}: ${i18n.t('report_tanks_good', language)}`);
+                summary.push(`${this.cm.t('reports.tanks')}: ${this.cm.t('reports.tanks_good')}`);
             }
         }
         
-        // Battery levels
         if (analysisResults.batteryLevels && config.includeBatteryLevels !== false) {
             const batteries = analysisResults.batteryLevels;
-            const lowBatteries = Object.entries(batteries).filter(([_, battery]) => 
-                battery.status === 'low' || battery.status === 'critical'
+            const lowBatteries = Object.entries(batteries).filter(([_, b]) => 
+                b.status === 'low' || b.status === 'critical'
             );
             
             if (lowBatteries.length > 0) {
-                const batteryInfo = lowBatteries.map(([id, battery]) => {
-                    const info = [];
-                    if (battery.capacity !== null) info.push(`${battery.capacity}%`);
-                    if (battery.voltage !== null) info.push(`${battery.voltage}V`);
-                    return `${id} ${info.join(' ')}`;
+                const info = lowBatteries.map(([id, b]) => {
+                    const vals = [];
+                    if (b.capacity !== null) vals.push(`${b.capacity}%`);
+                    if (b.voltage !== null) vals.push(`${b.voltage}V`);
+                    return `${id} ${vals.join(' ')}`;
                 }).join(', ');
-                
-                parts.push(`${i18n.t('report_batteries', language)}: ${batteryInfo}`);
-                summary.push(`${i18n.t('report_batteries', language)}: ${i18n.localize(language, 'report_batteries_attention', { count: lowBatteries.length })}`);
+                parts.push(`${this.cm.t('reports.batteries')}: ${info}`);
+                summary.push(`${this.cm.t('reports.batteries')}: ${this.cm.t('reports.batteries_attention', { count: lowBatteries.length })}`);
             } else if (Object.keys(batteries).length > 0) {
-                summary.push(`${i18n.t('report_batteries', language)}: ${i18n.t('report_batteries_good', language)}`);
+                summary.push(`${this.cm.t('reports.batteries')}: ${this.cm.t('reports.batteries_good')}`);
             }
         }
         
-        // Calculate confidence based on available data
         let confidence = 0.5;
         if (analysisResults.weather) confidence += 0.2;
         if (analysisResults.tides) confidence += 0.1;
@@ -1220,7 +1396,7 @@ class OrchestratorBrain {
         if (Object.keys(analysisResults.tankLevels || {}).length > 0) confidence += 0.05;
         if (Object.keys(analysisResults.batteryLevels || {}).length > 0) confidence += 0.05;
         
-        const baseMessage = i18n.localize(language, 'startup_analysis_complete');
+        const baseMessage = this.cm.t('general.startup_complete');
         
         return {
             speech: parts.length > 0 ? `${baseMessage}. ${parts.join('. ')}` : baseMessage,
@@ -1233,22 +1409,19 @@ class OrchestratorBrain {
      * Analyze logbook entries to provide insights and recommendations
      */
     async analyzeLogbookEntries(entries, vesselData, context) {
-        const language = this.config.language || 'en';
         try {
             if (!entries || entries.length === 0) {
                 return {
-                    speech: i18n.t('logbook_no_entries', language),
-                    summary: i18n.t('logbook_no_entries', language),
+                    speech: this.cm.t('logbook.no_entries'),
+                    summary: this.cm.t('logbook.no_entries'),
                     confidence: 1.0,
                     insights: [],
                     recommendations: []
                 };
             }
 
-            // Calculate statistics from entries
             const stats = this.calculateLogbookStatistics(entries);
             
-            // Prepare analysis prompt for LLM if available
             let aiAnalysis = null;
             if (await this.llm.checkConnectionAsync()) {
                 const prompt = this.buildLogbookAnalysisPrompt(entries, stats, vesselData, context);
@@ -1258,69 +1431,62 @@ class OrchestratorBrain {
                         temperature: 0.7
                     });
                 } catch (error) {
-                    this.app.debug('LLM analysis for logbook failed, using basic analysis:', error.message);
+                    this.app.debug('LLM logbook analysis failed:', error.message);
                 }
             }
 
-            // Build comprehensive analysis result
             const insights = [];
             const recommendations = [];
+            const nmLabel = this.cm.t('units.nm_abbr');
+            const ktsLabel = this.cm.t('units.knots');
+            const hrsLabel = this.cm.t('units.hours');
 
-            // Distance covered
             if (stats.totalDistance > 0) {
-                insights.push(`${i18n.t('logbook_distance', language)}: ${stats.totalDistance.toFixed(1)} ${language === 'fr' ? 'milles nautiques' : 'nautical miles'}`);
+                insights.push(`${this.cm.t('logbook.distance')}: ${stats.totalDistance.toFixed(1)} ${nmLabel}`);
             }
-
-            // Average speed
             if (stats.averageSpeed > 0) {
-                insights.push(`${i18n.t('logbook_avg_speed', language)}: ${stats.averageSpeed.toFixed(1)} ${language === 'fr' ? 'nœuds' : 'knots'}`);
+                insights.push(`${this.cm.t('logbook.avg_speed')}: ${stats.averageSpeed.toFixed(1)} ${ktsLabel}`);
             }
-
-            // Weather trends
-            if (stats.weatherTrends) {
-                if (stats.weatherTrends.windIncreasing) {
-                    insights.push(i18n.t('logbook_wind_increasing', language));
-                    recommendations.push(i18n.t('logbook_monitor_weather', language));
-                }
+            if (stats.weatherTrends?.windIncreasing) {
+                insights.push(this.cm.t('logbook.wind_increasing'));
+                recommendations.push(this.cm.t('logbook.monitor_weather'));
             }
-
-            // Engine hours
             if (stats.engineHours > 0) {
-                insights.push(`${i18n.t('logbook_engine_hours', language)}: ${stats.engineHours.toFixed(1)} ${language === 'fr' ? 'heures' : 'hours'}`);
+                insights.push(`${this.cm.t('logbook.engine_hours')}: ${stats.engineHours.toFixed(1)} ${hrsLabel}`);
                 if (stats.engineHours > 50) {
-                    recommendations.push(i18n.t('logbook_engine_maintenance', language));
+                    recommendations.push(this.cm.t('logbook.engine_maintenance'));
                 }
             }
-
-            // Entry frequency
             if (stats.entryFrequency < 4) {
-                recommendations.push(i18n.t('logbook_entry_frequency', language));
+                recommendations.push(this.cm.t('logbook.entry_frequency'));
             }
 
-            // Generate speech summary
             const speechParts = [];
-            speechParts.push(i18n.localize(language, 'logbook_analysis_count', { count: entries.length }));
-            
+            speechParts.push(this.cm.t('logbook.analysis_count', { count: entries.length }));
             if (stats.totalDistance > 0) {
-                if (language === 'fr') {
-                    speechParts.push(`Vous avez parcouru ${stats.totalDistance.toFixed(1)} milles nautiques.`);
-                } else {
-                    speechParts.push(`You have covered ${stats.totalDistance.toFixed(1)} nautical miles.`);
-                }
+                speechParts.push(`${stats.totalDistance.toFixed(1)} ${nmLabel}`);
             }
-            
             if (insights.length > 0) {
                 speechParts.push(insights.slice(0, 2).join('. '));
             }
 
+            // Store logbook stats as brain memory for next analysis
+            this.logbookMemory.performanceBaseline = {
+                avgSpeed: stats.averageSpeed,
+                totalDistance: stats.totalDistance,
+                engineHours: stats.engineHours,
+                windTrend: stats.weatherTrends?.windIncreasing ? 'increasing' : 'stable',
+                updatedAt: new Date().toISOString()
+            };
+
             return {
-                speech: speechParts.join(' '),
-                summary: i18n.localize(language, 'logbook_analysis_count', { count: entries.length }),
+                speech: speechParts.join('. '),
+                summary: this.cm.t('logbook.analysis_count', { count: entries.length }),
                 confidence: aiAnalysis ? 0.9 : 0.7,
-                insights: insights,
-                recommendations: recommendations,
+                insights,
+                recommendations,
                 statistics: stats,
-                aiAnalysis: aiAnalysis || (language === 'fr' ? 'Analyse IA non disponible' : 'AI analysis not available'),
+                aiAnalysis: aiAnalysis || this.cm.t('general.ai_unavailable'),
                 entriesAnalyzed: entries.length
             };
 
@@ -1435,22 +1601,121 @@ class OrchestratorBrain {
             author: entry.author
         }));
 
-        return `Analyze the following logbook entries for a sailing vessel:
+        return `Logbook: ${entries.length} entries, ` +
+            `${stats.totalDistance.toFixed(1)} NM covered, ` +
+            `avg ${stats.averageSpeed.toFixed(1)} kts, ` +
+            `engine ${stats.engineHours.toFixed(1)}h. ` +
+            `Recent: ${JSON.stringify(recentEntries)}. ` +
+            `Vessel: ${vesselData.speed?.toFixed(1) || '?'} kts at ` +
+            `${vesselData.position?.latitude?.toFixed(4)}, ${vesselData.position?.longitude?.toFixed(4)}. ` +
+            `Analyse voyage progress, patterns, and recommendations.`;
+    }
+    // ────────── LOGBOOK AS PERSISTENT MEMORY ──────────
 
-Statistics:
-- Total entries: ${entries.length}
-- Total distance: ${stats.totalDistance.toFixed(1)} NM
-- Average speed: ${stats.averageSpeed.toFixed(1)} knots
-- Engine hours: ${stats.engineHours.toFixed(1)} hours
+    /**
+     * Load persistent context from logbook on startup.
+     * Reads the most recent brain_memory entry to restore state.
+     */
+    async _loadLogbookMemory() {
+        try {
+            if (!this.logbookManager) return;
 
-Recent entries:
-${JSON.stringify(recentEntries, null, 2)}
+            const entries = await this.logbookManager.getAnalysisEntries();
+            if (!entries || entries.length === 0) {
+                this.app.debug('No logbook entries to load memory from');
+                return;
+            }
 
-Current vessel status:
-- Speed: ${vesselData.speed?.toFixed(1) || 'N/A'} knots
-- Position: ${vesselData.position?.latitude?.toFixed(4)}, ${vesselData.position?.longitude?.toFixed(4)}
+            // Find the most recent brain_memory entry
+            const memoryEntries = entries.filter(e =>
+                e.entryType === 'brain_memory' || e.systemEvent === true
+            );
 
-Provide a brief analysis (2-3 sentences) of the voyage progress, patterns, and any recommendations.`;
+            if (memoryEntries.length > 0) {
+                const latest = memoryEntries[memoryEntries.length - 1];
+                if (latest.brainState) {
+                    this.logbookMemory = { ...this.logbookMemory, ...latest.brainState };
+                    this.app.debug('Brain memory restored from logbook');
+                }
+            }
+
+            // Extract performance baseline from recent entries
+            const stats = this.calculateLogbookStatistics(entries.slice(-20));
+            this.logbookMemory.performanceBaseline = {
+                avgSpeed: stats.averageSpeed,
+                totalDistance: stats.totalDistance,
+                engineHours: stats.engineHours,
+                windTrend: stats.weatherTrends?.windIncreasing ? 'increasing' : 'stable',
+                updatedAt: new Date().toISOString()
+            };
+
+            // Extract recent alerts summary
+            const alertEntries = entries.filter(e =>
+                e.entryType === 'alert' || e.entryType === 'safety'
+            ).slice(-5);
+            if (alertEntries.length > 0) {
+                this.logbookMemory.recentAlertsSummary = alertEntries.map(e => ({
+                    type: e.entryType,
+                    summary: e.summary,
+                    timestamp: e.timestamp || e.datetime
+                }));
+            }
+
+            this.logbookMemory.loadedAt = new Date().toISOString();
+            this.app.debug(`Logbook memory loaded: ${entries.length} entries analyzed`);
+
+        } catch (error) {
+            this.app.debug('Failed to load logbook memory, starting fresh:', error.message);
+        }
+    }
+
+    /**
+     * Store brain state to logbook for persistence across restarts.
+     */
+    async _storeLogbookMemory() {
+        try {
+            if (!this.logbookManager) return;
+
+            const brainState = {
+                lastWeatherBaseline: this.state.lastWeatherAnalysis?.assessment ? {
+                    beaufort: this.state.lastWeatherAnalysis.assessment.beaufort?.force,
+                    windStrength: this.state.lastWeatherAnalysis.assessment.windStrength,
+                    pressure: this.state.lastWeatherAnalysis.assessment.pressure,
+                    trend: this.state.lastWeatherAnalysis.assessment.trend?.overall
+                } : null,
+                performanceBaseline: this.logbookMemory.performanceBaseline,
+                keelPosition: this.logbookMemory.keelPosition,
+                mode: this.state.mode,
+                aisTargetsInRange: this.state.aisTargetsInRange,
+                savedAt: new Date().toISOString()
+            };
+
+            await this.logbookManager.logAnalysis('brain_memory', {
+                summary: 'Brain state checkpoint',
+                confidence: 1.0,
+                systemEvent: true,
+                entryType: 'brain_memory',
+                brainState
+            });
+
+            this.app.debug('Brain memory stored to logbook');
+
+        } catch (error) {
+            this.app.debug('Failed to store brain memory:', error.message);
+        }
+    }
+
+    /**
+     * Get logbook memory context for analysis enrichment.
+     * @returns {object} Compact context from persistent logbook memory
+     */
+    getLogbookContext() {
+        return {
+            performanceBaseline: this.logbookMemory.performanceBaseline,
+            recentAlerts: this.logbookMemory.recentAlertsSummary,
+            lastWeatherBaseline: this.logbookMemory.lastWeatherBaseline,
+            keelPosition: this.logbookMemory.keelPosition
+        };
     }
 }
 

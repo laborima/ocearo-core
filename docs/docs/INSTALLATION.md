@@ -108,8 +108,8 @@ Download from [ollama.ai](https://ollama.ai/download)
 #### Pull a Model
 
 ```bash
-# Recommended: phi3:mini (small and fast)
-ollama pull phi3:mini
+# Recommended: qwen2.5:3b (small and fast)
+ollama pull qwen2.5:3b
 
 # Alternative: llama3 (more capable, larger)
 ollama pull llama3
@@ -130,7 +130,7 @@ curl http://localhost:11434/api/tags
 In Signal K Admin UI → Plugin Config → Ocearo Core:
 
 - **Ollama Host**: `http://localhost:11434`
-- **Model**: `phi3:mini`
+- **Model**: `qwen2.5:3b`
 
 ---
 
@@ -292,7 +292,7 @@ ollama serve
 
 ### LLM Responses Slow
 
-- Use a smaller model: `phi3:mini` instead of `llama3`
+- Use a smaller model: `qwen2.5:3b` instead of `llama3`
 - Increase timeout in settings
 - Check system resources (RAM, CPU)
 
@@ -311,7 +311,7 @@ chmod -R 755 ~/.signalk/node_modules/ocearo-core
 
 - Use ARM64 binaries for Piper
 - Consider using eSpeak for lower resource usage
-- Use `phi3:mini` model for Ollama (lower memory)
+- Use `qwen2.5:3b` model for Ollama (lower memory)
 
 ### OpenPlotter
 

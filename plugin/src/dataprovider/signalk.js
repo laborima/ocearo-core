@@ -106,6 +106,10 @@ class SignalKDataProvider {
       skPaths.environment.wind.speedApparent,
       skPaths.environment.wind.angleApparent,
       skPaths.environment.water.temperature,
+      skPaths.environment.outside.pressure,
+      skPaths.environment.outside.airTemperature,
+      skPaths.environment.outside.humidity,
+      skPaths.environment.wind.directionTrue,
       'electrical.batteries.*',
       'propulsion.*'
     ];
@@ -229,17 +233,10 @@ class SignalKDataProvider {
 
         update.values.forEach((pathValue, valueIndex) => {
           try {
-        
-            // Use safe handleMessage wrapper (some servers expect messages in a specific envelope)
-            this._safeHandleMessage({
-              context: delta.context || 'vessels.self',
-              updates: [
-                {
-                  timestamp: update.timestamp || new Date().toISOString(),
-                  values: [pathValue]
-                }
-              ]
-            });
+            const path = pathValue && pathValue.path;
+            if (path) {
+              this._emitSafe('data.updated', { path, value: pathValue.value });
+            }
           } catch (valueError) {
             this._error(`Error processing value ${valueIndex} in update ${updateIndex}:`, valueError && valueError.message ? valueError.message : valueError);
             this._error('PathValue:', JSON.stringify(pathValue));
@@ -350,6 +347,11 @@ class SignalKDataProvider {
           },
           water: {
             temperature: this._getSelfPath(skPaths.environment.water.temperature)
+          },
+          outside: {
+            pressure: this._getSelfPath(skPaths.environment.outside.pressure),
+            temperature: this._getSelfPath(skPaths.environment.outside.airTemperature),
+            humidity: this._getSelfPath(skPaths.environment.outside.humidity)
           }
         },
         electrical: {

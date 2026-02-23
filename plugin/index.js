@@ -1,10 +1,120 @@
-/*
+/**
  * ocearo-core Signal K Plugin
- * Main entry point
+ *
+ * Main entry point for the Ocearo intelligent marine assistant.
+ * Coordinates data providers, AI analysis, voice synthesis, and logbook integration.
  */
 
 const path = require('path');
 const fs = require('fs');
+
+// ─── Security helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Lightweight in-process rate limiter (no external dependency).
+ * Tracks request counts per IP in a rolling time window.
+ */
+class RateLimiter {
+    constructor(windowMs, maxRequests) {
+        this._windowMs = windowMs;
+        this._max = maxRequests;
+        this._store = new Map();
+        // Cleanup stale entries every window
+        setInterval(() => this._cleanup(), windowMs).unref();
+    }
+
+    _cleanup() {
+        const now = Date.now();
+        for (const [key, entry] of this._store) {
+            if (now - entry.start > this._windowMs) this._store.delete(key);
+        }
+    }
+
+    /**
+     * Returns true if the request should be allowed, false if rate-limited.
+     * @param {string} key  typically the client IP
+     */
+    allow(key) {
+        const now = Date.now();
+        const entry = this._store.get(key);
+        if (!entry || now - entry.start > this._windowMs) {
+            this._store.set(key, { start: now, count: 1 });
+            return true;
+        }
+        if (entry.count >= this._max) return false;
+        entry.count++;
+        return true;
+    }
+}
+
+// Rate limiters: generous for reads, stricter for heavy AI operations
+const generalLimiter = new RateLimiter(60_000, 120);   // 120 req/min
+const analysisLimiter = new RateLimiter(60_000, 10);    // 10 AI calls/min
+const speakLimiter = new RateLimiter(60_000, 20);       // 20 TTS calls/min
+
+/**
+ * Express middleware: attach a short request ID and enforce rate limit.
+ * @param {RateLimiter} limiter
+ */
+function rateLimit(limiter) {
+    return (req, res, next) => {
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        if (!limiter.allow(ip)) {
+            return res.status(429).json({
+                error: 'Too many requests',
+                retryAfterMs: 60_000
+            });
+        }
+        next();
+    };
+}
+
+/**
+ * Sanitise a string: strip control characters, limit length.
+ * @param {string} value
+ * @param {number} maxLen
+ * @returns {string}
+ */
+function sanitiseString(value, maxLen = 2000) {
+    if (typeof value !== 'string') return '';
+    return value
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        .substring(0, maxLen)
+        .trim();
+}
+
+/**
+ * Middleware: require JSON body and reject oversized payloads.
+ * Signal K plugin router already parses JSON, so this just validates.
+ */
+function requireJson(req, res, next) {
+    if (req.method !== 'GET' && req.method !== 'DELETE') {
+        if (!req.body || typeof req.body !== 'object') {
+            return res.status(400).json({ error: 'JSON body required' });
+        }
+    }
+    next();
+}
+
+/**
+ * Guard: return 503 if brain is not initialised.
+ */
+function requireBrain(brain) {
+    return (req, res, next) => {
+        if (!brain) return res.status(503).json({ error: 'Service not initialized' });
+        next();
+    };
+}
+
+/**
+ * Guard: return 503 if a component is not initialised.
+ */
+function requireComponent(getComponent, name) {
+    return (req, res, next) => {
+        if (!getComponent()) return res.status(503).json({ error: `${name} not initialized` });
+        next();
+    };
+}
 
 // Import components
 const SignalKProvider = require('./src/dataprovider/signalk');
@@ -15,6 +125,7 @@ const LLMClient = require('./src/llm');
 const VoiceModule = require('./src/voice');
 const OrchestratorBrain = require('./src/brain');
 const LogbookManager = require('./src/logbook');
+const ConfigManager = require('./src/config');
 
 module.exports = function(app) {
     const plugin = {};
@@ -22,8 +133,8 @@ module.exports = function(app) {
     let components = {};
     
     plugin.id = 'ocearo-core';
-    plugin.name = 'ocearo-core';
-    plugin.description = 'Intelligent marine assistant with LLM and voice synthesis';
+    plugin.name = 'Océaro Core';
+    plugin.description = 'Assistant marin intelligent : briefings météo/marées, coaching voile, analyse AIS, alertes vocales via Ollama LLM et Piper TTS';
     
     // Load schema
     plugin.schema = JSON.parse(
@@ -55,9 +166,11 @@ module.exports = function(app) {
                 
                 app.debug('Initializing Weather Provider...');
                 components.weatherProvider = new WeatherProvider(app, options);
+                components.weatherProvider.start();
                 
                 app.debug('Initializing Tides Provider...');
                 components.tidesProvider = new TidesProvider(app, options);
+                await components.tidesProvider.start();
                 
                 app.debug('Initializing Memory Manager...');
                 components.memoryManager = new MemoryManager(app, options);
@@ -68,14 +181,20 @@ module.exports = function(app) {
                 await components.logbookManager.start();
     
                 
+                app.debug('Initializing ConfigManager...');
+                components.configManager = new ConfigManager(app, {
+                    language: options.language || 'fr',
+                    boat: options.boat || 'dufour310gl',
+                    personality: options.personality || 'jarvis'
+                });
+
                 app.debug('Initializing LLM Client...');
-                components.llm = new LLMClient(app, options || {});
+                components.llm = new LLMClient(app, options || {}, components.configManager);
                 
                 app.debug('Initializing Voice Module...');
                 components.voice = new VoiceModule(app, options || {});
                 components.voice.start();
-                
-                
+
                 app.debug('Creating Orchestrator Brain...');
                 brain = new OrchestratorBrain(app, options, components);
                 await brain.start();
@@ -127,8 +246,11 @@ module.exports = function(app) {
             
             // Stop components
             if (components.voice) components.voice.stop();
+            if (components.weatherProvider) components.weatherProvider.stop();
+            if (components.tidesProvider) await components.tidesProvider.stop();
             if (components.signalkProvider) components.signalkProvider.stop();
             if (components.memoryManager) await components.memoryManager.stop();
+            if (components.logbookManager) await components.logbookManager.stop();
             
             // Clear components
             components = {};
@@ -141,6 +263,15 @@ module.exports = function(app) {
     };
     
     plugin.registerWithRouter = function(router) {
+        // Apply general rate limit and JSON validation to all routes
+        router.use(rateLimit(generalLimiter));
+        router.use(requireJson);
+
+        // Delegate anchor API endpoints to AnchorPlugin
+        if (brain && brain.anchorPlugin) {
+            brain.anchorPlugin.registerWithRouter(router);
+        }
+
         // Health check endpoint - lightweight check for monitoring
         router.get('/health', async (req, res) => {
             const health = {
@@ -152,6 +283,8 @@ module.exports = function(app) {
                     signalk: !!components.signalkProvider,
                     memory: !!components.memoryManager,
                     logbook: components.logbookManager?.isConnected || false,
+                    logbookBackend: components.logbookManager?.backend || 'unknown',
+                    anchor: brain?.anchorPlugin?.getState() || 'unknown',
                     voice: components.voice?.enabled || false,
                     llm: components.llm?.isConnected() || false
                 }
@@ -182,23 +315,22 @@ module.exports = function(app) {
             res.json(brain.getSystemStatus());
         });
         
-        // Manual analysis
-        router.post('/analyze', async (req, res) => {
+        // Manual analysis — heavy AI operation, stricter rate limit
+        router.post('/analyze', rateLimit(analysisLimiter), async (req, res) => {
             if (!brain) {
                 return res.status(503).json({ error: 'Service not initialized' });
             }
 
             const { type } = req.body;
 
-            // Validate analysis type
-            const validTypes = ['weather', 'sail', 'alerts', 'status', 'logbook'];
+            const validTypes = ['weather', 'sail', 'alerts', 'ais', 'status', 'logbook'];
             if (!type) {
                 return res.status(400).json({ error: 'Analysis type is required' });
             }
-            if (!validTypes.includes(type)) {
+            if (!validTypes.includes(sanitiseString(type, 20))) {
                 return res.status(400).json({
                     error: 'Invalid analysis type',
-                    validTypes: validTypes
+                    validTypes
                 });
             }
 
@@ -206,7 +338,8 @@ module.exports = function(app) {
                 const result = await brain.requestAnalysis(type);
                 res.json(result);
             } catch (error) {
-                res.status(500).json({
+                const status = error.message.includes('AI service unavailable') ? 503 : 500;
+                res.status(status).json({
                     error: 'Analysis failed',
                     message: error.message
                 });
@@ -222,7 +355,7 @@ module.exports = function(app) {
             const { mode } = req.body;
 
             // Validate mode parameter
-            const validModes = ['sailing', 'anchored', 'motoring','moored'];
+            const validModes = ['sailing', 'anchored', 'motoring', 'moored', 'racing'];
             if (!mode) {
                 return res.status(400).json({ error: 'Mode is required' });
             }
@@ -247,38 +380,27 @@ module.exports = function(app) {
             }
         });
         
-        // Test speech
-        router.post('/speak', (req, res) => {
+        // TTS — rate-limited separately
+        router.post('/speak', rateLimit(speakLimiter), (req, res) => {
             if (!components.voice) {
                 return res.status(503).json({ error: 'Voice not initialized' });
             }
 
-            const { text, priority } = req.body;
+            const rawText = req.body.text;
+            const priority = req.body.priority;
 
-            // Validate text parameter
-            if (!text) {
-                return res.status(400).json({ error: 'Text is required' });
-            }
-            if (typeof text !== 'string') {
-                return res.status(400).json({ error: 'Text must be a string' });
-            }
-            if (text.length === 0) {
-                return res.status(400).json({ error: 'Text cannot be empty' });
-            }
-            if (text.length > 1000) {
-                return res.status(400).json({ error: 'Text too long (max 1000 characters)' });
-            }
+            if (!rawText) return res.status(400).json({ error: 'Text is required' });
+            if (typeof rawText !== 'string') return res.status(400).json({ error: 'Text must be a string' });
 
-            // Validate priority parameter (optional)
+            const text = sanitiseString(rawText, 1000);
+            if (text.length === 0) return res.status(400).json({ error: 'Text cannot be empty' });
+
             const validPriorities = ['low', 'normal', 'high'];
             if (priority && !validPriorities.includes(priority)) {
-                return res.status(400).json({
-                    error: 'Invalid priority',
-                    validPriorities: validPriorities
-                });
+                return res.status(400).json({ error: 'Invalid priority', validPriorities });
             }
 
-            components.voice.speak(text, { priority });
+            components.voice.speak(text, { priority: priority || 'normal' });
             res.json({ success: true });
         });
         
@@ -377,8 +499,9 @@ module.exports = function(app) {
                 // Check if the operation was successful
                 if (result.success === false) {
                     return res.status(503).json({
-                        error: 'Logbook service unavailable',
-                        message: result.error || 'SignalK-Logbook plugin not available'
+                        error: 'Logbook write failed',
+                        message: result.error || 'Could not write logbook entry',
+                        backend: components.logbookManager.backend
                     });
                 }
                 
@@ -389,6 +512,17 @@ module.exports = function(app) {
                     message: error.message
                 });
             }
+        });
+
+        // Logbook backend info
+        router.get('/logbook/backend', (req, res) => {
+            if (!components.logbookManager) {
+                return res.status(503).json({ error: 'Logbook manager not initialized' });
+            }
+            res.json({
+                backend: components.logbookManager.backend,
+                connected: components.logbookManager.isConnected
+            });
         });
 
         router.get('/logbook/stats', async (req, res) => {
@@ -408,24 +542,65 @@ module.exports = function(app) {
             }
         });
 
-        router.post('/logbook/analyze', async (req, res) => {
+        // ── Fuel log endpoints ────────────────────────────────────────────────
+        router.post('/logbook/fuel', async (req, res) => {
+            if (!components.logbookManager) {
+                return res.status(503).json({ error: 'Logbook manager not initialized' });
+            }
+
+            try {
+                const record = req.body;
+
+                if (!record.liters || parseFloat(record.liters) <= 0) {
+                    return res.status(400).json({ error: 'liters must be a positive number' });
+                }
+
+                const result = await components.logbookManager.addFuelLogEntry({
+                    ...record,
+                    datetime: new Date().toISOString()
+                });
+                res.json(result);
+            } catch (error) {
+                res.status(500).json({ error: 'Failed to add fuel log entry', message: error.message });
+            }
+        });
+
+        router.get('/logbook/fuel', async (req, res) => {
+            if (!components.logbookManager) {
+                return res.status(503).json({ error: 'Logbook manager not initialized' });
+            }
+
+            try {
+                const entries = await components.logbookManager.getFuelLogEntries();
+                res.json(entries);
+            } catch (error) {
+                res.status(500).json({ error: 'Failed to get fuel log entries', message: error.message });
+            }
+        });
+
+        // Logbook AI analysis — accepts optional pre-fetched entries in body
+        router.post('/logbook/analyze', rateLimit(analysisLimiter), async (req, res) => {
             if (!brain) {
                 return res.status(503).json({ error: 'Service not initialized' });
             }
 
             try {
-                // Request logbook analysis from the brain
                 const result = await brain.requestAnalysis('logbook');
                 res.json(result);
             } catch (error) {
-                res.status(500).json({
+                const status = error.message.includes('AI service unavailable') ? 503 : 500;
+                res.status(status).json({
                     error: 'Logbook analysis failed',
                     message: error.message
                 });
             }
         });
 
-        router.post('/logbook/entry', async (req, res) => {
+        // AI-enhanced logbook entry generation — uses LLM with currentData context
+        router.post('/logbook/entry', rateLimit(analysisLimiter), async (req, res) => {
+            if (!brain) {
+                return res.status(503).json({ error: 'Service not initialized' });
+            }
             if (!components.logbookManager) {
                 return res.status(503).json({ error: 'Logbook manager not initialized' });
             }
@@ -433,23 +608,58 @@ module.exports = function(app) {
             const { currentData } = req.body;
 
             try {
-                // Generate AI-enhanced logbook entry
-                const analysisResult = {
-                    summary: 'AI-generated logbook entry based on current vessel conditions',
-                    confidence: 0.9,
-                    recommendations: ['Entry created automatically by Jarvis AI'],
-                    metrics: {
-                        processingTime: '0.2s',
-                        dataPoints: Object.keys(currentData || {}).length
+                const language = components.configManager ? components.configManager.language : 'fr';
+                const isFrench = language === 'fr';
+
+                // Build a rich context prompt from the vessel data provided by the UI
+                const vesselSummary = currentData ? [
+                    currentData.speed !== undefined ? `SOG ${(currentData.speed * 1.94384).toFixed(1)} kts` : null,
+                    currentData.course !== undefined ? `COG ${Math.round(currentData.course * 180 / Math.PI)}°` : null,
+                    currentData.wind?.speed !== undefined ? `Vent ${(currentData.wind.speed * 1.94384).toFixed(1)} nds` : null,
+                    currentData.weather?.pressure !== undefined ? `${(currentData.weather.pressure / 100).toFixed(0)} hPa` : null,
+                    currentData.engine?.hours !== undefined ? `Moteur ${(currentData.engine.hours / 3600).toFixed(1)}h` : null
+                ].filter(Boolean).join(', ') : (isFrench ? 'Aucune donnée bateau' : 'No vessel data');
+
+                let aiText = isFrench
+                    ? `Entrée automatique : ${vesselSummary}`
+                    : `Auto entry: ${vesselSummary}`;
+                let confidence = 0.7;
+
+                // Enrich with LLM if available
+                if (components.llm && components.llm.isConnected()) {
+                    try {
+                        const prompt = isFrench
+                            ? `Rédige une entrée de journal de bord nautique concise (80 mots max) pour ces conditions : ${vesselSummary}. Sois factuel et professionnel. Réponds uniquement en français.`
+                            : `Write a concise nautical logbook entry (max 80 words) for these conditions: ${vesselSummary}. Be factual and professional.`;
+                        const llmText = await components.llm.generateCompletion(prompt, { maxTokens: 120 });
+                        if (llmText && llmText.trim().length > 0) {
+                            aiText = llmText.trim();
+                            confidence = 0.92;
+                        }
+                    } catch (llmErr) {
+                        app.debug('LLM enrichment skipped for logbook entry:', llmErr.message);
                     }
+                }
+
+                // Add as a real logbook entry so it appears in /all-entries
+                const entry = {
+                    datetime: new Date().toISOString(),
+                    author: components.logbookManager?.signalkLogbook?.author || 'ocearo-core',
+                    text: aiText,
+                    category: 'navigation'
+                };
+                await components.logbookManager.addLogbookEntry(entry);
+
+                const analysisResult = {
+                    summary: aiText,
+                    confidence,
+                    recommendations: [],
+                    metrics: { dataPoints: Object.keys(currentData || {}).length }
                 };
 
-                // Log the analysis
-                await components.logbookManager.logAnalysis('auto-entry', analysisResult);
-                
-                res.json({ 
-                    success: true, 
-                    message: 'AI logbook entry created successfully',
+                res.json({
+                    success: true,
+                    message: isFrench ? 'Entrée IA créée' : 'AI logbook entry created',
                     analysis: analysisResult
                 });
             } catch (error) {
@@ -460,45 +670,50 @@ module.exports = function(app) {
             }
         });
 
+        // Retrieve recent AI logbook entries (analysis type)
+        router.get('/logbook/entry', async (req, res) => {
+            if (!components.logbookManager) {
+                return res.status(503).json({ error: 'Logbook manager not initialized' });
+            }
+            try {
+                const { startDate, endDate, limit } = req.query;
+                const entries = await components.logbookManager.getAnalysisEntries(startDate, endDate);
+                const maxEntries = Math.min(parseInt(limit, 10) || 50, 200);
+                res.json(entries.slice(-maxEntries));
+            } catch (error) {
+                res.status(500).json({ error: 'Failed to fetch logbook entries', message: error.message });
+            }
+        });
 
-        // LLM test
-        router.post('/llm/test', async (req, res) => {
+
+        // LLM test — rate-limited as AI operation
+        router.post('/llm/test', rateLimit(analysisLimiter), async (req, res) => {
             if (!components.llm) {
                 return res.status(503).json({ error: 'LLM not initialized' });
             }
 
-            const { prompt } = req.body;
+            const rawPrompt = req.body.prompt;
+            if (!rawPrompt) return res.status(400).json({ error: 'Prompt is required' });
+            if (typeof rawPrompt !== 'string') return res.status(400).json({ error: 'Prompt must be a string' });
 
-            // Validate prompt parameter
-            if (!prompt) {
-                return res.status(400).json({ error: 'Prompt is required' });
-            }
-            if (typeof prompt !== 'string') {
-                return res.status(400).json({ error: 'Prompt must be a string' });
-            }
-            if (prompt.length === 0) {
-                return res.status(400).json({ error: 'Prompt cannot be empty' });
-            }
-            if (prompt.length > 2000) {
-                return res.status(400).json({ error: 'Prompt too long (max 2000 characters)' });
-            }
+            const prompt = sanitiseString(rawPrompt, 2000);
+            if (prompt.length === 0) return res.status(400).json({ error: 'Prompt cannot be empty' });
 
             try {
                 const response = await components.llm.generateCompletion(prompt, {});
                 res.json({ response });
             } catch (error) {
-                if (error.message.includes('LLM service not available')) {
-                    res.status(503).json({
-                        error: 'LLM service not available',
-                        message: 'Ollama service is not running or accessible. Please start Ollama to use AI features.'
-                    });
-                } else {
-                    res.status(500).json({
-                        error: 'LLM request failed',
-                        message: error.message
-                    });
-                }
+                const isUnavailable = error.message.includes('LLM service not available');
+                res.status(isUnavailable ? 503 : 500).json({
+                    error: isUnavailable ? 'LLM service not available' : 'LLM request failed',
+                    message: error.message
+                });
             }
+        });
+
+        // Catch-all for unknown plugin routes
+        router.use((req, res) => {
+            res.status(404).json({ error: 'Endpoint not found', path: req.path });
         });
     };
     

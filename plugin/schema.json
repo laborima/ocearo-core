@@ -1,277 +1,399 @@
 {
   "type": "object",
   "properties": {
+
     "language": {
       "type": "string",
       "title": "Language",
-      "enum": [
-        "en",
-        "fr"
-      ],
+      "description": "Language for voice assistant and reports.",
+      "enum": ["en", "fr"],
       "default": "fr"
     },
+
     "personality": {
       "type": "string",
-      "title": "Assistant Personality",
-      "enum": [
-        "professional",
-        "jarvis",
-        "friend",
-        "sea ​​dog"
-      ],
+      "title": "Personality",
+      "description": "Voice assistant tone.",
+      "enum": ["professional", "jarvis", "friend", "sea dog"],
       "default": "jarvis"
     },
+
+    "boat": {
+      "type": "string",
+      "title": "Boat Model",
+      "description": "Boat config file name without .json. E.g. dufour310gl",
+      "default": "dufour310gl"
+    },
+
     "mode": {
       "type": "string",
       "title": "Operating Mode",
-      "enum": [
-        "sailing",
-        "anchored",
-        "motoring",
-        "moored",
-        "racing"
-      ],
+      "description": "Current vessel mode, used to adapt analyses.",
+      "enum": ["sailing", "anchored", "motoring", "moored", "racing"],
       "default": "sailing"
     },
+
     "llm": {
       "type": "object",
-      "title": "LLM Configuration",
+      "title": "AI (LLM)",
+      "description": "Ollama language model configuration.",
       "properties": {
         "enabled": {
           "type": "boolean",
-          "title": "Enable LLM",
+          "title": "Enable AI",
+          "description": "Enable or disable the AI assistant.",
           "default": true
         },
         "ollamaHost": {
           "type": "string",
           "title": "Ollama Host",
+          "description": "Ollama server URL.",
           "default": "http://localhost:11434"
         },
         "model": {
           "type": "string",
-          "title": "Model Name",
-          "default": "phi3:mini"
+          "title": "LLM Model",
+          "description": "Ollama model name. E.g. qwen2.5:3b, mistral, llama3.",
+          "default": "qwen2.5:3b"
         },
-        "timeout": {
+        "timeoutSeconds": {
           "type": "number",
-          "title": "Timeout (ms)",
-          "default": 30000
+          "title": "AI Timeout (s)",
+          "description": "Maximum wait time for an AI response in seconds.",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 120
         }
       }
     },
+
     "voice": {
       "type": "object",
-      "title": "Voice Configuration",
+      "title": "Voice (TTS)",
+      "description": "Text-to-speech configuration.",
       "properties": {
         "enabled": {
           "type": "boolean",
           "title": "Enable Voice",
+          "description": "Enable voice announcements.",
           "default": true
         },
         "backend": {
           "type": "string",
           "title": "TTS Backend",
-          "enum": [
-            "piper",
-            "espeak",
-            "console"
-          ],
+          "description": "piper = high quality (RPi5), espeak = lightweight, console = logs only.",
+          "enum": ["piper", "espeak", "console"],
           "default": "piper"
+        },
+        "piper": {
+          "type": "object",
+          "title": "Piper TTS",
+          "description": "Piper TTS engine settings.",
+          "properties": {
+            "command": {
+              "type": "string",
+              "title": "Piper Command",
+              "description": "Path to the Piper executable.",
+              "default": "piper"
+            },
+            "model": {
+              "type": "string",
+              "title": "Voice Model",
+              "description": "Piper voice model name without .onnx. E.g. en_US-joe-medium or fr_FR-tom-medium.",
+              "default": "fr_FR-tom-medium"
+            },
+            "modelPath": {
+              "type": "string",
+              "title": "Models Path",
+              "description": "Directory containing .onnx model files.",
+              "default": "/opt/piper"
+            }
+          }
         }
       }
     },
-    "weatherProvider": {
-      "type": "object",
-      "title": "Weather Provider",
-      "properties": {
-        "source": {
-          "type": "string",
-          "title": "Weather Source",
-          "enum": [
-            "openmeteo","noaa"
-          ],
-          "default": "openmeteo"
-        },
-        "cacheMinutes": {
-          "type": "number",
-          "title": "Cache Duration (minutes)",
-          "default": 15
-        }
-      }
-    },
-    "tidesProvider": {
-      "type": "object",
-      "title": "Tides Provider",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "title": "Enable Tides",
-          "default": false
-        },
-        "provider": {
-          "type": "string",
-          "title": "Tide Provider",
-          "enum": [
-            "none",
-            "local",
-            "shom",
-            "noaa"
-          ],
-          "default": "noaa"
-        },
-        "stationId": {
-          "type": "string",
-          "title": "Station ID",
-          "description": "Provider station identifier. For NOAA, use the NOAA station ID (e.g., 8454000). For local, this matches the subfolder under tides/<stationId>/.",
-          "default": ""
-        },
-        "cacheHours": {
-          "type": "number",
-          "title": "Cache Duration (hours)",
-          "default": 6,
-          "minimum": 1,
-          "maximum": 72
-        }
-      }
-    },
-    "alerts": {
-      "type": "object",
-      "title": "Alert Settings",
-      "properties": {
-        "suppressionMinutes": {
-          "type": "number",
-          "title": "Alert Suppression (minutes)",
-          "default": 5
-        },
-        "speakAlarms": {
-          "type": "boolean",
-          "title": "Speak Alarms",
-          "default": true
-        }
-      }
-    },
+
     "logbook": {
       "type": "object",
-      "title": "Logbook Settings",
+      "title": "Logbook",
+      "description": "Integration with signalk-logbook plugin and AI logging settings.",
       "properties": {
         "enabled": {
           "type": "boolean",
-          "title": "Enable SignalK Logbook",
+          "title": "Enable signalk-logbook",
+          "description": "Use signalk-logbook plugin as backend. Otherwise, local storage is used.",
           "default": false
-        },
-        "serverUrl": {
-          "type": "string",
-          "title": "SignalK Server URL",
-          "default": "http://localhost:3000"
-        },
-        "apiPath": {
-          "type": "string",
-          "title": "API Path",
-          "default": "/signalk/v1/api/logbook"
         },
         "author": {
           "type": "string",
-          "title": "Log Author",
+          "title": "AI Entry Author",
+          "description": "Name shown for AI-generated logbook entries.",
           "default": "ocearo-core"
         },
-        "timeout": {
-          "type": "number",
-          "title": "API Timeout (ms)",
-          "default": 5000,
-          "minimum": 1000,
-          "maximum": 30000
-        }
-      }
-    },
-    "analysisLogging": {
-      "type": "object",
-      "title": "AI Analysis Logging",
-      "properties": {
-        "enabled": {
+        "logAnalysis": {
           "type": "boolean",
-          "title": "Enable AI Analysis Logging",
+          "title": "Log AI Analyses",
+          "description": "Automatically log AI analyses to the logbook.",
           "default": true
         },
-        "includeVesselData": {
+        "includeVesselDataInAnalysis": {
           "type": "boolean",
-          "title": "Include Vessel Data in Analysis Logs",
+          "title": "Include Vessel Data",
+          "description": "Attach vessel data (position, speed, wind) to analysis entries.",
           "default": true
         },
         "logRecommendations": {
           "type": "boolean",
-          "title": "Log AI Recommendations",
+          "title": "Log Recommendations",
+          "description": "Include AI recommendations in logbook entries.",
           "default": true
         }
       }
     },
-    "schedules": {
+
+    "alerts": {
       "type": "object",
-      "title": "Schedule Settings",
+      "title": "Alerts",
+      "description": "Alert and notification settings.",
       "properties": {
-        "alertCheck": {
+        "suppressionMinutes": {
           "type": "number",
-          "title": "Alert Check Interval (seconds)",
-          "default": 30
+          "title": "Alert Suppression (min)",
+          "description": "Minimum delay between identical alerts in minutes.",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60
         },
-        "weatherUpdate": {
-          "type": "number",
-          "title": "Weather Update Interval (seconds)",
-          "default": 300
-        },
-        "sailAnalysis": {
-          "type": "number",
-          "title": "Sail Analysis Interval (seconds)",
-          "default": 120
+        "speakAlarms": {
+          "type": "boolean",
+          "title": "Speak Alarms",
+          "description": "Speak SignalK alarms aloud.",
+          "default": true
         }
       }
     },
+
+    "schedules": {
+      "type": "object",
+      "title": "Analysis Schedules",
+      "description": "Frequency of automatic analyses in seconds.",
+      "properties": {
+        "alertCheck": {
+          "type": "number",
+          "title": "Alert Check (s)",
+          "description": "Alert check interval in seconds.",
+          "default": 30,
+          "minimum": 10,
+          "maximum": 300
+        },
+        "weatherUpdate": {
+          "type": "number",
+          "title": "Weather Update (s)",
+          "description": "Weather update interval in seconds.",
+          "default": 300,
+          "minimum": 60,
+          "maximum": 3600
+        },
+        "sailAnalysis": {
+          "type": "number",
+          "title": "Sail Analysis (s)",
+          "description": "Sail analysis interval in seconds.",
+          "default": 120,
+          "minimum": 30,
+          "maximum": 600
+        },
+        "aisCheck": {
+          "type": "number",
+          "title": "AIS Check (s)",
+          "description": "AIS monitoring interval in seconds.",
+          "default": 15,
+          "minimum": 5,
+          "maximum": 60
+        }
+      }
+    },
+
     "startupAnalysis": {
       "type": "object",
-      "title": "Startup Analysis Settings",
+      "title": "Startup Analysis",
+      "description": "Automatic briefing when the plugin starts.",
       "properties": {
         "enabled": {
           "type": "boolean",
-          "title": "Enable Startup Analysis",
+          "title": "Enable Startup Briefing",
+          "description": "Run a full analysis on startup.",
           "default": true
         },
         "delaySeconds": {
           "type": "number",
-          "title": "Delay Before Analysis (seconds)",
+          "title": "Delay Before Briefing (s)",
+          "description": "Wait before briefing to let SignalK initialise.",
           "default": 20,
           "minimum": 5,
           "maximum": 300
         },
         "includeWeatherForecast": {
           "type": "boolean",
-          "title": "Include Weather Forecast",
+          "title": "Include Weather",
+          "description": "Include weather forecast in the briefing.",
           "default": true
         },
         "includeTides": {
           "type": "boolean",
-          "title": "Include Tide Information",
+          "title": "Include Tides",
+          "description": "Include tide information in the briefing.",
           "default": true
         },
         "includeSailRecommendations": {
           "type": "boolean",
-          "title": "Include Sail Recommendations",
+          "title": "Include Sail Advice",
+          "description": "Include sail recommendations in the briefing.",
           "default": true
         },
         "includeTankLevels": {
           "type": "boolean",
           "title": "Include Tank Levels",
+          "description": "Include fuel and water tank levels in the briefing.",
           "default": true
         },
         "includeBatteryLevels": {
           "type": "boolean",
           "title": "Include Battery Levels",
+          "description": "Include battery status in the briefing.",
           "default": true
         },
         "speakAnalysis": {
           "type": "boolean",
-          "title": "Speak Startup Analysis",
+          "title": "Speak Briefing",
+          "description": "Speak the startup briefing aloud.",
+          "default": true
+        }
+      }
+    },
+
+    "anchor": {
+      "type": "object",
+      "title": "Anchor Watch",
+      "description": "Anchor watch settings.",
+      "properties": {
+        "defaultRadius": {
+          "type": "number",
+          "title": "Default Alarm Radius (m)",
+          "description": "Anchor alarm radius in metres.",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 500
+        },
+        "watchRadiusPercent": {
+          "type": "number",
+          "title": "Early Warning Threshold (%)",
+          "description": "Percentage of alarm radius triggering an early warning.",
+          "default": 80,
+          "minimum": 50,
+          "maximum": 95
+        },
+        "positionUpdateInterval": {
+          "type": "number",
+          "title": "Position Check Interval (ms)",
+          "description": "Position check frequency in milliseconds.",
+          "default": 2000,
+          "minimum": 500,
+          "maximum": 10000
+        }
+      }
+    },
+
+    "ais": {
+      "type": "object",
+      "title": "AIS Collision Detection",
+      "description": "AIS monitoring and collision risk detection settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable AIS Monitoring",
+          "description": "Enable AIS collision risk detection.",
+          "default": true
+        },
+        "dangerCPA": {
+          "type": "number",
+          "title": "Danger CPA (NM)",
+          "description": "CPA below which a DANGER alert is raised.",
+          "default": 0.25,
+          "minimum": 0.05,
+          "maximum": 1.0
+        },
+        "cautionCPA": {
+          "type": "number",
+          "title": "Caution CPA (NM)",
+          "description": "CPA triggering a CAUTION alert.",
+          "default": 0.5,
+          "minimum": 0.1,
+          "maximum": 2.0
+        },
+        "watchCPA": {
+          "type": "number",
+          "title": "Watch CPA (NM)",
+          "description": "CPA triggering a watch notification.",
+          "default": 1.0,
+          "minimum": 0.5,
+          "maximum": 5.0
+        },
+        "maxRange": {
+          "type": "number",
+          "title": "Max Detection Range (NM)",
+          "description": "Maximum range for AIS target monitoring.",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20
+        },
+        "maxTCPA": {
+          "type": "number",
+          "title": "Max TCPA (min)",
+          "description": "Maximum time to CPA considered in minutes.",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 60
+        },
+        "announceCooldownMinutes": {
+          "type": "number",
+          "title": "Announce Cooldown (min)",
+          "description": "Minimum delay between voice announcements for the same target.",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 30
+        }
+      }
+    },
+
+    "weatherProvider": {
+      "type": "object",
+      "title": "Weather Provider",
+      "description": "Weather data provider settings.",
+      "properties": {
+        "timeoutSeconds": {
+          "type": "number",
+          "title": "Weather Request Timeout (s)",
+          "description": "Maximum timeout for weather API requests in seconds.",
+          "default": 15,
+          "minimum": 5,
+          "maximum": 60
+        }
+      }
+    },
+
+    "tidesProvider": {
+      "type": "object",
+      "title": "Tides",
+      "description": "Tide data provider settings (signalk-tides plugin).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable Tides",
+          "description": "Enable tide data integration.",
           "default": true
         }
       }
     }
+
   }
 }

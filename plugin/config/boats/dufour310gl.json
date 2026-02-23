@@ -1,0 +1,123 @@
+{
+  "id": "dufour310gl",
+  "name": "Dufour 310 Grand Large",
+  "variant": "integral_centerboard",
+  "category": "B",
+
+  "dimensions": {
+    "loa": 9.48,
+    "lwl": 8.65,
+    "beam": 3.25,
+    "displacement": 4500,
+    "ballast": 1200
+  },
+
+  "keel": {
+    "type": "retractable",
+    "draftDown": 1.90,
+    "draftUp": 0.90,
+    "raiseThresholdDepth": 2.5,
+    "lowerThresholdDepth": 4.0,
+    "notes": "integral_centerboard_cast_iron"
+  },
+
+  "engine": {
+    "type": "diesel",
+    "model": "Volvo Penta D1-20",
+    "power": 15,
+    "drive": "saildrive",
+    "fuelCapacity": 90,
+    "cruisingRpm": 2500,
+    "maxRpm": 3600
+  },
+
+  "tanks": {
+    "fuel": 90,
+    "freshWater": 150,
+    "holding": 60
+  },
+
+  "sails": {
+    "main": {
+      "area": 28.0,
+      "type": "slab_reef",
+      "battens": "full",
+      "reefPoints": 2
+    },
+    "genoa": {
+      "area": 21.0,
+      "type": "furling",
+      "lpg": 145,
+      "notes": "roller_furling_genoa"
+    },
+    "jib": {
+      "area": 16.0,
+      "type": "furling_partial",
+      "lpg": 100,
+      "notes": "genoa_partially_furled"
+    },
+    "stormJib": {
+      "area": 6.0,
+      "type": "hanked",
+      "notes": "inner_forestay_or_removable"
+    },
+    "spinnaker": {
+      "area": 65.0,
+      "type": "asymmetric",
+      "notes": "bowsprit_mounted"
+    }
+  },
+
+  "polars": {
+    "description": "Dufour 310 GL performance data (boat speed in knots)",
+    "tws": [6, 8, 10, 12, 14, 16, 20, 25, 30],
+    "twa": [0, 32, 38, 42, 48, 52, 60, 75, 90, 110, 120, 135, 150, 165, 180],
+    "speeds": [
+      [0.0, 1.8, 2.5, 3.0, 3.4, 3.6, 3.9, 4.2, 4.3, 4.0, 3.7, 3.2, 2.8, 2.4, 2.0],
+      [0.0, 2.5, 3.4, 4.0, 4.4, 4.6, 5.0, 5.3, 5.4, 5.1, 4.8, 4.2, 3.7, 3.2, 2.7],
+      [0.0, 3.0, 4.1, 4.8, 5.3, 5.5, 5.9, 6.2, 6.3, 6.0, 5.7, 5.0, 4.4, 3.8, 3.3],
+      [0.0, 3.3, 4.5, 5.3, 5.8, 6.0, 6.4, 6.7, 6.8, 6.5, 6.1, 5.4, 4.8, 4.2, 3.6],
+      [0.0, 3.5, 4.8, 5.6, 6.1, 6.3, 6.7, 7.0, 7.1, 6.8, 6.4, 5.7, 5.1, 4.5, 3.9],
+      [0.0, 3.5, 4.9, 5.7, 6.2, 6.4, 6.8, 7.1, 7.2, 6.9, 6.5, 5.8, 5.2, 4.6, 4.0],
+      [0.0, 3.2, 4.5, 5.3, 5.8, 6.0, 6.4, 6.8, 7.0, 6.8, 6.4, 5.7, 5.1, 4.5, 3.9],
+      [0.0, 2.5, 3.5, 4.2, 4.8, 5.0, 5.5, 6.0, 6.3, 6.2, 5.8, 5.2, 4.6, 4.0, 3.4],
+      [0.0, 1.8, 2.5, 3.2, 3.8, 4.0, 4.5, 5.2, 5.6, 5.5, 5.2, 4.6, 4.0, 3.4, 2.8]
+    ]
+  },
+
+  "optimalTWA": {
+    "light":    { "upwind": 48, "downwind": 155 },
+    "moderate": { "upwind": 44, "downwind": 150 },
+    "fresh":    { "upwind": 42, "downwind": 148 },
+    "heavy":    { "upwind": 45, "downwind": 155 }
+  },
+
+  "limits": {
+    "hullSpeed": 7.2,
+    "maxComfortHeel": 20,
+    "maxSafeHeel": 30,
+    "maxCrewOverboard": 35,
+    "comfortWindLimit": 25,
+    "maxSailingWind": 40,
+    "reef1Trigger": 18,
+    "reef2Trigger": 25,
+    "stormSailsTrigger": 35,
+    "spinnaker": {
+      "maxTrueWind": 18,
+      "minTWA": 90,
+      "maxTWA": 180
+    },
+    "anchoring": {
+      "maxDepth": 15,
+      "maxWind": 30,
+      "scopeRatio": 5
+    }
+  },
+
+  "maneuverPenalties": {
+    "tackSeconds": 40,
+    "gybeSeconds": 30,
+    "reefSeconds": 180,
+    "sailChangeSeconds": 300
+  }
+}

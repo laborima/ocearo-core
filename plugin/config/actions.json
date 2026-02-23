@@ -1,0 +1,184 @@
+{
+  "trim": {
+    "in_irons": {
+      "mainsheet": "released", "traveler": "centered", "boomVang": "off",
+      "cunningham": "off", "outhaul": "moderate", "jibLead": "centered",
+      "jibSheet": "released", "preventer": "off", "spinnaker": "none"
+    },
+    "close_hauled": {
+      "mainsheet": "tight", "traveler": "centered_windward",
+      "boomVang": "moderate", "cunningham": "firm_heavy_air",
+      "outhaul": "tight_flat", "jibLead": "forward",
+      "jibSheet": "tight_telltales", "preventer": "off", "spinnaker": "none"
+    },
+    "close_reach": {
+      "mainsheet": "eased_slightly", "traveler": "centered",
+      "boomVang": "moderate", "cunningham": "light",
+      "outhaul": "moderate", "jibLead": "middle",
+      "jibSheet": "slightly_eased", "preventer": "off", "spinnaker": "none"
+    },
+    "beam_reach": {
+      "mainsheet": "eased_spreaders", "traveler": "down",
+      "boomVang": "firm_twist", "cunningham": "off",
+      "outhaul": "eased_power", "jibLead": "aft",
+      "jibSheet": "eased", "preventer": "off", "spinnaker": "consider_light"
+    },
+    "broad_reach": {
+      "mainsheet": "well_eased", "traveler": "all_down",
+      "boomVang": "tight_twist", "cunningham": "off",
+      "outhaul": "loose_draft", "jibLead": "aft",
+      "jibSheet": "eased_poled", "preventer": "recommended", "spinnaker": "consider"
+    },
+    "running": {
+      "mainsheet": "full_out", "traveler": "centered",
+      "boomVang": "tight_critical", "cunningham": "off",
+      "outhaul": "loose", "jibLead": "aft",
+      "jibSheet": "poled_or_furled", "preventer": "mandatory", "spinnaker": "recommended"
+    },
+    "dead_run": {
+      "mainsheet": "full_out", "traveler": "centered",
+      "boomVang": "tight_critical", "cunningham": "off",
+      "outhaul": "loose", "jibLead": "aft",
+      "jibSheet": "goosewinged_or_furled", "preventer": "mandatory", "spinnaker": "recommended_symmetric"
+    }
+  },
+
+  "trimOverrides": {
+    "heavy_air": {
+      "condition": "windStrength in [strong, near_gale, gale]",
+      "mainsheet": "eased_depower", "traveler": "down_leeward",
+      "cunningham": "tight_flatten", "boomVang": "very_tight", "outhaul": "max_flat"
+    },
+    "gusty": {
+      "condition": "gustFactor > 1.4",
+      "mainsheet": "ready_dump", "traveler": "down_leeward"
+    },
+    "dangerous_heel": {
+      "condition": "heel > 30",
+      "mainsheet": "dump_immediately", "traveler": "full_leeward", "urgent": true
+    },
+    "excessive_heel": {
+      "condition": "heel > 25",
+      "mainsheet": "ease_reduce_heel", "traveler": "drop_leeward"
+    }
+  },
+
+  "reefing": {
+    "rules": [
+      {
+        "id": "reef1_wind",
+        "trigger": "trueWindSpeed >= boat.limits.reef1Trigger",
+        "action": "reef_1",
+        "priority": "high",
+        "sail": "main"
+      },
+      {
+        "id": "reef1_gust",
+        "trigger": "gustFactor > 1.3 AND windStrength == moderate AND twa < 60",
+        "action": "prepare_reef_1",
+        "priority": "medium",
+        "sail": "main"
+      },
+      {
+        "id": "reef2_wind",
+        "trigger": "trueWindSpeed >= boat.limits.reef2Trigger",
+        "action": "reef_2",
+        "priority": "high",
+        "sail": "main"
+      },
+      {
+        "id": "storm_sails",
+        "trigger": "trueWindSpeed >= boat.limits.stormSailsTrigger",
+        "action": "storm_config",
+        "priority": "critical",
+        "sail": "all"
+      }
+    ]
+  },
+
+  "headsailSelection": {
+    "rules": [
+      { "windStrength": "light",     "sail": "genoa",    "notes": "full_genoa_145" },
+      { "windStrength": "moderate",  "sail": "genoa",    "notes": "genoa_135_partial_furl" },
+      { "windStrength": "fresh",     "sail": "jib",      "notes": "furled_to_100" },
+      { "windStrength": "strong",    "sail": "jib",      "notes": "heavily_furled" },
+      { "windStrength": "near_gale", "sail": "stormJib", "notes": "storm_jib_inner_stay" },
+      { "windStrength": "gale",      "sail": "stormJib", "notes": "storm_jib_or_bare" }
+    ],
+    "upwindOverride": {
+      "fresh_close_hauled": "jib"
+    }
+  },
+
+  "keelManagement": {
+    "rules": [
+      {
+        "id": "raise_shallow",
+        "trigger": "depth < boat.keel.raiseThresholdDepth AND keelDown",
+        "action": "raise_keel",
+        "priority": "critical"
+      },
+      {
+        "id": "lower_offshore",
+        "trigger": "depth > boat.keel.lowerThresholdDepth AND keelUp AND sailing",
+        "action": "lower_keel",
+        "priority": "high"
+      },
+      {
+        "id": "lower_heavy_weather",
+        "trigger": "beaufort >= 6 AND keelUp",
+        "action": "lower_keel",
+        "priority": "high"
+      },
+      {
+        "id": "raise_anchoring_shallow",
+        "trigger": "mode == anchored AND depth < 3.0",
+        "action": "raise_keel",
+        "priority": "medium"
+      }
+    ]
+  },
+
+  "safety": {
+    "preventer": {
+      "mandatory": ["running", "dead_run"],
+      "recommended_above_knots": 15,
+      "recommended_points": ["broad_reach"]
+    },
+    "stormPrep": [
+      "close_all_hatches",
+      "secure_loose_gear",
+      "check_bilge_pumps",
+      "prepare_sea_anchor",
+      "don_lifejackets_harness",
+      "rig_jacklines",
+      "reduce_sail_early",
+      "charge_batteries",
+      "check_flares_epirb"
+    ],
+    "nightWatch": {
+      "aisCheckInterval": 10,
+      "navLightsCheck": true,
+      "radarReflector": true
+    }
+  },
+
+  "windStrengthThresholds": {
+    "light":     { "min": 0,  "max": 10 },
+    "moderate":  { "min": 10, "max": 20 },
+    "fresh":     { "min": 20, "max": 25 },
+    "strong":    { "min": 25, "max": 30 },
+    "near_gale": { "min": 30, "max": 35 },
+    "gale":      { "min": 35, "max": 999 }
+  },
+
+  "pointOfSailRanges": {
+    "in_irons":    { "min": 0,   "max": 35 },
+    "close_hauled": { "min": 35, "max": 50 },
+    "close_reach":  { "min": 50, "max": 60 },
+    "beam_reach":   { "min": 60, "max": 90 },
+    "broad_reach":  { "min": 90, "max": 120 },
+    "running":      { "min": 120, "max": 170 },
+    "dead_run":     { "min": 170, "max": 180 }
+  }
+}

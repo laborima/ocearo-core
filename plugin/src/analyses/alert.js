@@ -1,16 +1,18 @@
-/*
- * Alert analysis module
- * Processes and enriches alerts with LLM analysis
+/**
+ * Alert Analysis Module
+ *
+ * Processes SignalK notifications, determines severity, suppresses
+ * duplicates, enriches with LLM analysis, and decides speech priority.
  */
 
-const { i18n } = require('../common');
 
 class AlertAnalyzer {
-    constructor(app, config, llm, memory) {
+    constructor(app, config, llm, memory, cm) {
         this.app = app;
         this.config = config;
         this.llm = llm;
         this.memory = memory;
+        this.cm = cm;
         
         // Alert severity mappings
         this.severityLevels = {
@@ -62,10 +64,14 @@ class AlertAnalyzer {
                 vesselData: this.extractRelevantData(vesselData, alert.category)
             });
             
+            const speech = analysis?.speech || analysis || alert.message;
+            const text = analysis?.text || speech;
+
             return {
                 ...alert,
                 ...alertEntry,
-                speech: analysis,
+                speech,
+                text,
                 shouldSpeak: this.shouldSpeak(alert)
             };
         } catch (error) {
@@ -129,10 +135,12 @@ class AlertAnalyzer {
         
         if (mode === 'smart' || mode === 'verbose') {
             try {
-                return await this.llm.processAlert(alert, vesselData, context);
+                const result = await this.llm.processAlert(alert, vesselData, context);
+                return result;
             } catch (error) {
                 this.app.error('LLM analysis failed, using basic message:', error);
-                return this.getBasicAlertMessage(alert);
+                const fallback = this.getBasicAlertMessage(alert);
+                return { speech: fallback, text: fallback };
             }
         }
         
@@ -143,23 +151,19 @@ class AlertAnalyzer {
      * Get basic alert message
      */
     getBasicAlertMessage(alert) {
-        const lang = this.config.language || 'en';
-        
-        // Try to get localized message for alert type
-        const messageKey = `alert_${alert.type}`;
-        const localizedMessage = i18n.localize(lang, messageKey, {
+        const typeKey = `alerts.${alert.type}`;
+        const localizedMessage = this.cm.t(typeKey, {
             value: alert.value,
             message: alert.message
         });
-        
-        // If no specific localization, use generic
-        if (localizedMessage === messageKey) {
-            return i18n.localize(lang, 'alert_generic', {
+
+        if (localizedMessage === typeKey) {
+            return this.cm.t('alerts.generic', {
                 message: alert.message,
                 value: alert.value
             });
         }
-        
+
         return localizedMessage;
     }
 
@@ -224,14 +228,12 @@ class AlertAnalyzer {
      * Get alert summary for speech
      */
     getAlertSummary(alerts = []) {
-        const lang = this.config.language || 'en';
-        
         if (!alerts || alerts.length === 0) {
-            return i18n.localize(lang, 'no_alerts', { default: 'No active alerts' });
+            return this.cm.t('alerts.no_alerts');
         }
-        
+
         const count = alerts.length;
-        const summary = i18n.localize(lang, 'active_alerts_count', { count });
+        const summary = this.cm.t('alerts.count', { count });
         
         // Add details for up to 3 most recent alerts
         const details = alerts.slice(0, 3).map(alert => {

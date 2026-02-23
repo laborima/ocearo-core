@@ -1,6 +1,8 @@
-/*
- * Common utilities and shared functions
- * Refactored for better module structure and reliability
+/**
+ * Common Utilities and Shared Functions
+ *
+ * Provides i18n, text utilities, unit conversions,
+ * SignalK path constants, and default configuration.
  */
 
 // Default configurations
@@ -19,17 +21,50 @@ const defaults = {
 // ---------------- TEXT UTILS ----------------
 const textUtils = {
   /**
-   * Clean text for TTS output
+   * Clean text for TTS output — langue-aware.
+   * En français: unités en toutes lettres, décimales avec virgule.
+   * @param {string} text
+   * @param {string} lang 'fr' | 'en'
    */
-  cleanForTTS: (text = '') => {
+  cleanForTTS: (text = '', lang = 'en') => {
     try {
-      return String(text)
-        .replace(/[<>]/g, '') // Remove XML/HTML tags
-        .replace(/\s+/g, ' ') // Normalize whitespace
-        .replace(/(\d+)\.(\d+)/g, '$1 point $2') // Convert decimals
-        .replace(/°/g, ' degrees') // Convert degree symbols
-        .replace(/&/g, 'and') // Convert ampersands
+      let s = String(text)
+        .replace(/[<>*_#`]/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/&/g, lang === 'fr' ? 'et' : 'and')
         .trim();
+
+      if (lang === 'fr') {
+        s = s
+          .replace(/(\d+)[.,](\d+)\s*kts?\b/gi, (_, a, b) => `${a} virgule ${b} nœuds`)
+          .replace(/(\d+)\s*kts?\b/gi, (_, a) => `${a} nœuds`)
+          .replace(/(\d+)[.,](\d+)\s*knots?\b/gi, (_, a, b) => `${a} virgule ${b} nœuds`)
+          .replace(/(\d+)\s*knots?\b/gi, (_, a) => `${a} nœuds`)
+          .replace(/(\d+)[.,](\d+)\s*km\/h\b/gi, (_, a, b) => `${a} virgule ${b} kilomètres par heure`)
+          .replace(/(\d+)\s*km\/h\b/gi, (_, a) => `${a} kilomètres par heure`)
+          .replace(/(\d+)[.,](\d+)\s*hPa\b/gi, (_, a, b) => `${a} virgule ${b} hectopascals`)
+          .replace(/(\d+)\s*hPa\b/gi, (_, a) => `${a} hectopascals`)
+          .replace(/(\d+)[.,](\d+)\s*m\b/gi, (_, a, b) => `${a} virgule ${b} mètres`)
+          .replace(/(\d+)\s*m\b(?!\w)/gi, (_, a) => `${a} mètres`)
+          .replace(/(\d+)[.,](\d+)\s*NM\b/gi, (_, a, b) => `${a} virgule ${b} milles nautiques`)
+          .replace(/(\d+)\s*NM\b/gi, (_, a) => `${a} milles nautiques`)
+          .replace(/(\d+)[.,](\d+)/g, (_, a, b) => `${a} virgule ${b}`)
+          .replace(/°/g, ' degrés')
+          .replace(/\bN\b/g, 'Nord').replace(/\bS\b/g, 'Sud')
+          .replace(/\bE\b/g, 'Est').replace(/\bW\b/g, 'Ouest')
+          .replace(/\bNE\b/g, 'Nord-Est').replace(/\bNW\b/g, 'Nord-Ouest')
+          .replace(/\bSE\b/g, 'Sud-Est').replace(/\bSW\b/g, 'Sud-Ouest')
+          .replace(/\bNNE\b/g, 'Nord-Nord-Est').replace(/\bNNW\b/g, 'Nord-Nord-Ouest')
+          .replace(/\bSSE\b/g, 'Sud-Sud-Est').replace(/\bSSW\b/g, 'Sud-Sud-Ouest')
+          .replace(/\bENE\b/g, 'Est-Nord-Est').replace(/\bESE\b/g, 'Est-Sud-Est')
+          .replace(/\bWNW\b/g, 'Ouest-Nord-Ouest').replace(/\bWSW\b/g, 'Ouest-Sud-Ouest');
+      } else {
+        s = s
+          .replace(/(\d+)[.,](\d+)/g, '$1 point $2')
+          .replace(/°/g, ' degrees');
+      }
+
+      return s.replace(/\s+/g, ' ').trim();
     } catch (error) {
       console.error('Error in cleanForTTS:', error);
       return String(text || '');
@@ -67,9 +102,11 @@ const textUtils = {
 
   /**
    * Alias for TTS - backwards compatibility
+   * @param {string} text
+   * @param {string} lang
    */
-  formatTextForTTS: function(text) {
-    return this.cleanForTTS(text);
+  formatTextForTTS: function(text, lang = 'en') {
+    return this.cleanForTTS(text, lang);
   },
 
   /**
@@ -245,7 +282,7 @@ const contextFormatters = {
   }
 };
 
-// ---------------- I18N ----------------
+// ---------------- I18N (DEPRECATED — use ConfigManager.t() instead) ----------------
 const i18n = {
   translations: {
     en: {

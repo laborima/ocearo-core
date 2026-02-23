@@ -1,6 +1,10 @@
-/*
- * Voice/TTS module
- * Handles text-to-speech output via multiple backends
+/**
+ * Voice/TTS Module
+ *
+ * Handles text-to-speech output via multiple backends:
+ * - Piper TTS (default, high quality neural TTS for RPi5)
+ * - eSpeak-ng (lightweight fallback)
+ * - Console (debug/headless mode)
  */
 
 const { spawn } = require('child_process');
@@ -20,6 +24,7 @@ class VoiceModule {
             piper: {
                 command: config.voice?.piper?.command || 'piper',
                 model: config.voice?.piper?.model || (config.language === 'fr' ? 'fr_FR-tom-medium' : 'en_US-joe-medium'),
+                modelPath: config.voice?.piper?.modelPath || '/opt/piper',
                 speed: config.voice?.piper?.speed || 1.0,
                 outputDevice: config.voice?.piper?.outputDevice || 'default'
             },
@@ -302,7 +307,7 @@ class VoiceModule {
             aplay.on('error', reject);
             
             aplay.on('close', async () => {
-                this.app.debug(`Piper Spoke: "${text.substring(0, 50)}..."`);
+                this.app.debug(`Piper Spoke: "${text}"`);
                 
                 resolve();
             });

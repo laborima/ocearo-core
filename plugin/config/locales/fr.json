@@ -1,0 +1,339 @@
+{
+  "meta": { "code": "fr", "name": "Français", "dateLocale": "fr-FR" },
+
+  "general": {
+    "welcome": "Bienvenue à bord",
+    "system_ready": "Système Ocearo prêt",
+    "system_error": "Erreur système détectée",
+    "analysis_failed": "Impossible de compléter l'analyse demandée",
+    "ai_unavailable": "L'assistant IA n'est pas disponible. Vérifiez le service Ollama.",
+    "no_data": "Données non disponibles",
+    "startup_complete": "Analyse de démarrage terminée"
+  },
+
+  "startup": {
+    "jarvis": "Systèmes en ligne. Comment puis-je vous assister, Capitaine ?",
+    "friend": "Salut ! Tous les systèmes sont prêts.",
+    "professional": "Océaro initialisé. Tous les systèmes opérationnels.",
+    "sea_dog": "Ohé du bateau ! Tout est paré, on peut larguer les amarres.",
+    "default": "Océaro initialisé. Systèmes opérationnels."
+  },
+
+  "shutdown": {
+    "jarvis": "Systèmes hors ligne. Bon vent, Capitaine.",
+    "friend": "Extinction en cours. À bientôt !",
+    "professional": "Océaro en arrêt. Bonne navigation.",
+    "sea_dog": "On rentre au port. Bonne nuit, matelot.",
+    "default": "Océaro en arrêt. Bonne navigation."
+  },
+
+  "mode": {
+    "sailing": "Navigation à la voile",
+    "anchored": "Au mouillage",
+    "motoring": "Navigation au moteur",
+    "moored": "Amarré",
+    "racing": "Régate",
+    "changed": "Mode changé en : {mode}"
+  },
+
+  "status": {
+    "system": "État du système",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "mode_label": "Mode",
+    "alerts_count": "{count} alertes actives",
+    "ai_offline": "Attention : assistant IA hors ligne",
+    "logbook_offline": "Note : journal de bord hors ligne",
+    "weather_summary": "Météo : force {beaufort}, mer {seaState}, tendance {trend}",
+    "squall_risk_high": "Risque de grain élevé",
+    "ais_summary": "AIS : {total} cibles, {danger} en danger",
+    "no_ais": "Aucune cible AIS à proximité"
+  },
+
+  "weather": {
+    "unavailable": "Données météo non disponibles",
+    "current": "Conditions actuelles : vent {windSpeed} nœuds de {windDir}, vagues {waveHeight} m",
+
+    "beaufort": {
+      "0": "Calme",
+      "1": "Très légère brise",
+      "2": "Légère brise",
+      "3": "Petite brise",
+      "4": "Jolie brise",
+      "5": "Bonne brise",
+      "6": "Vent frais",
+      "7": "Grand frais",
+      "8": "Coup de vent",
+      "9": "Fort coup de vent",
+      "10": "Tempête",
+      "11": "Violente tempête",
+      "12": "Ouragan"
+    },
+
+    "strength": {
+      "light": "Léger",
+      "moderate": "Modéré",
+      "fresh": "Frais",
+      "strong": "Fort",
+      "near_gale": "Grand frais",
+      "gale": "Coup de vent"
+    },
+
+    "sea_state": {
+      "glassy": "Mer d'huile",
+      "calm": "Calme",
+      "smooth": "Peu agitée",
+      "slight": "Agitée",
+      "moderate": "Modérée",
+      "rough": "Forte",
+      "very_rough": "Très forte",
+      "high": "Grosse"
+    },
+
+    "trend": {
+      "improving": "En amélioration",
+      "stable": "Stable",
+      "deteriorating": "En dégradation",
+      "unknown": "Inconnue"
+    },
+
+    "pressure": {
+      "steady": "Stable",
+      "rising": "En hausse",
+      "rising_fast": "En hausse rapide",
+      "falling": "En baisse",
+      "falling_fast": "En baisse rapide — dépression en approche"
+    },
+
+    "alerts": {
+      "high_wind": "Alerte : vent fort à {speed} nœuds",
+      "strong_wind": "Attention : vent soutenu à {speed} nœuds",
+      "high_waves": "Alerte : vagues de {height} mètres",
+      "pressure_falling_fast": "Baromètre en chute rapide ({rate} hPa/h). Préparez-vous à une dégradation.",
+      "squall_risk": "Risque de grain élevé : rafales à {gustFactor}% du vent moyen, pression en baisse.",
+      "wind_against_tide": "Vent contre courant ! Clapot court et raide à prévoir."
+    },
+
+    "advice": {
+      "light_general": "Petit temps. Optimisez la surface de voile, gardez l'équipage en avant.",
+      "moderate_upwind": "Vent modéré au près. Bon réglage des voiles, surveillez les penons.",
+      "fresh_warning": "Vent frais. Prenez le 1er ris si ce n'est fait. Réduisez le génois.",
+      "strong_warning": "Vent fort. 2e ris recommandé. Foc de travail ou génois fortement enroulé.",
+      "near_gale_warning": "Grand frais ! Configuration tempête : tourmentin et GV très réduite. Sécurisez le pont.",
+      "gale_warning": "Coup de vent ! Voiles de cape ou à sec de toile. Fermez les panneaux. Équipage harnaché.",
+      "pressure_dropping": "Baromètre en baisse. Dégradation probable dans les 6-12h. Anticipez les ris.",
+      "weather_window": "Fenêtre météo favorable : {hours}h de conditions stables attendues.",
+      "squall_preparation": "Grain en approche. Prenez un ris de précaution. Main prête à choquer."
+    }
+  },
+
+  "sail": {
+    "point_of_sail": {
+      "in_irons": "Bout au vent",
+      "close_hauled": "Au près",
+      "close_reach": "Près bon plein",
+      "beam_reach": "Au travers",
+      "broad_reach": "Grand largue",
+      "running": "Vent arrière",
+      "dead_run": "Plein vent arrière"
+    },
+
+    "trim_labels": {
+      "mainsheet": "Écoute de GV",
+      "traveler": "Chariot",
+      "boomVang": "Hale-bas",
+      "cunningham": "Cunningham",
+      "outhaul": "Bordure / Étarqueur",
+      "jibLead": "Point de tire foc",
+      "jibSheet": "Écoute de foc",
+      "preventer": "Retenue de bôme",
+      "spinnaker": "Spi"
+    },
+
+    "trim_values": {
+      "released": "Largué",
+      "tight": "Bordé",
+      "tight_telltales": "Bordé — penons filants",
+      "tight_flat": "Bordé — voile plate",
+      "eased_slightly": "Légèrement choqué",
+      "eased": "Choqué",
+      "eased_spreaders": "Choqué aux barres de flèche",
+      "eased_power": "Choqué pour la puissance",
+      "eased_depower": "Choqué pour déventrer",
+      "well_eased": "Bien choqué",
+      "full_out": "Complètement choqué",
+      "ready_dump": "Prêt à choquer en grand",
+      "dump_immediately": "Choquer en grand IMMÉDIATEMENT",
+      "ease_reduce_heel": "Choquer pour réduire la gîte",
+      "centered": "Centré",
+      "centered_windward": "Centré ou légèrement au vent",
+      "down": "Descendu",
+      "down_leeward": "Descendu sous le vent",
+      "all_down": "Complètement descendu",
+      "full_leeward": "Plein sous le vent",
+      "off": "Relâché",
+      "light": "Léger",
+      "moderate": "Modéré",
+      "firm_heavy_air": "Appuyé par vent frais",
+      "firm_twist": "Appuyé pour contrôler le vrillage",
+      "tight_flatten": "Bordé pour aplatir l'entrée",
+      "tight_twist": "Bordé anti-vrillage",
+      "tight_critical": "Bordé — CRITIQUE sécurité",
+      "very_tight": "Très bordé",
+      "max_flat": "Maximum — voile très plate",
+      "loose": "Mou",
+      "loose_draft": "Mou pour le creux",
+      "forward": "Avancé",
+      "middle": "Position médiane",
+      "aft": "Reculé",
+      "slightly_eased": "Légèrement choqué",
+      "eased_poled": "Choqué ou tangonné",
+      "poled_or_furled": "Tangonné ou enroulé",
+      "goosewinged_or_furled": "En ciseaux ou enroulé",
+      "mandatory": "OBLIGATOIRE",
+      "recommended": "Recommandé",
+      "none": "Non applicable",
+      "consider": "À envisager",
+      "consider_light": "À envisager par petit temps",
+      "recommended_symmetric": "Recommandé (symétrique)"
+    },
+
+    "selection": {
+      "genoa": "Génois",
+      "genoa_full": "Génois plein (145%)",
+      "genoa_partial": "Génois partiellement enroulé (135%)",
+      "jib": "Foc",
+      "jib_100": "Foc enroulé (100%)",
+      "stormJib": "Tourmentin",
+      "storm_jib_inner": "Tourmentin sur étai intérieur",
+      "main_full": "GV pleine",
+      "reef_1": "1er ris",
+      "reef_2": "2e ris",
+      "reef_3": "3e ris",
+      "trysail": "Voile de cape",
+      "spinnaker": "Spi asymétrique",
+      "spinnaker_light": "Spi léger"
+    },
+
+    "advice": {
+      "reef_needed": "Ris recommandé",
+      "reduce_heel": "Réduisez la gîte",
+      "settings_ok": "Réglages de voiles optimaux",
+      "close_hauled_light": "Au près par petit temps : ouvrez la chute, relâchez cunningham et hale-bas. Avancez l'équipage.",
+      "close_hauled_fresh": "Au près par vent frais : bordez le cunningham, étarquez la bordure, descendez le chariot sous le vent.",
+      "beam_reach_general": "Au travers : choqué aux barres de flèche. Ajustez le hale-bas pour le vrillage.",
+      "running_safety": "Vent arrière : retenue de bôme OBLIGATOIRE. Risque d'empannage involontaire.",
+      "gust_preparation": "Rafales à {gustFactor}% du moyen. Main sur le chariot, prêt à choquer.",
+      "excessive_heel": "Gîte excessive à {heel}° ! Choquez la GV, descendez le chariot. Envisagez un ris.",
+      "storm_config": "Configuration coup de vent : tourmentin et GV très réduite. Sécurisez le pont. Panneaux fermés.",
+      "preventer_rig": "Installez la retenue de bôme.",
+      "prepare_reef_gusty": "Conditions rafaleuses — préparez le ris.",
+      "keel_raise_shallow": "Eaux peu profondes ! Relevez la quille. Tirant d'eau réduit à {draftUp}m.",
+      "keel_lower_offshore": "Au large : abaissez la quille pour la stabilité. Tirant d'eau {draftDown}m.",
+      "keel_lower_heavy_weather": "Gros temps : quille basse OBLIGATOIRE pour la stabilité."
+    }
+  },
+
+  "course": {
+    "maintain": "Cap actuel optimal, maintenez.",
+    "alter": "Changez de cap vers {heading}°.",
+    "tack": "Virez de bord, nouveau cap {heading}° ({cardinal}). VMG amélioré de {improvement} nœuds.",
+    "gybe": "Empannez, nouveau cap {heading}° ({cardinal}). Attention à la bôme.",
+    "no_improvement": "Pas d'amélioration significative.",
+    "advice": {
+      "low_efficiency": "Rendement à {efficiency}% du polaire. Vérifiez le réglage des voiles.",
+      "pinching": "Vous pincez trop au vent. Abattez de 5° pour gagner en VMG.",
+      "dead_run_vmg": "Vent arrière : naviguez en zigzag à {optAngle}° pour un meilleur VMG.",
+      "layline_tack": "Layline de virement en approche. Virez quand le relèvement passe par {heading}°.",
+      "wind_shift": "Vent de {cardinal} à {speed} nœuds. Surveillez les adonnantes pour virer au bon moment."
+    }
+  },
+
+  "ais": {
+    "no_targets": "Aucune cible AIS à proximité.",
+    "summary": "{total} cibles AIS, {danger} en danger, {caution} en attention.",
+    "risk": {
+      "danger": "DANGER",
+      "caution": "ATTENTION",
+      "watch": "SURVEILLANCE",
+      "safe": "SÛR"
+    },
+    "colregs": {
+      "head_on": "Route de collision frontale",
+      "crossing_give_way": "Route croisée — VOUS devez manœuvrer (priorité à tribord)",
+      "crossing_stand_on": "Route croisée — maintenez votre cap (priorité)",
+      "overtaking": "Rattrapage — le navire rattrapant doit s'écarter",
+      "being_overtaken": "Vous êtes rattrapé — maintenez cap et vitesse"
+    },
+    "alert": {
+      "danger_vessel": "DANGER COLLISION : {name} à {distance} NM, CPA {cpa} NM dans {tcpa} min. {colregs}. Action : {evasive}.",
+      "caution_vessel": "ATTENTION : {name} à {distance} NM, CPA {cpa} NM dans {tcpa} min. Surveillez.",
+      "evasive": {
+        "alter_starboard": "Changez de cap à tribord",
+        "maintain_course": "Maintenez cap et vitesse",
+        "slow_down": "Réduisez la vitesse",
+        "give_way": "Laissez passer"
+      }
+    }
+  },
+
+  "alerts": {
+    "generic": "Alerte : {message}. Valeur : {value}",
+    "depth": "Alerte profondeur : {value} mètres",
+    "wind": "Alerte vent : {value} nœuds",
+    "battery": "Alerte batterie : {value} volts",
+    "engine": "Alerte moteur : {value}",
+    "temperature": "Alerte température : {value}",
+    "no_alerts": "Aucune alerte active",
+    "count": "{count} alertes actives"
+  },
+
+  "tides": {
+    "high": "Pleine mer",
+    "low": "Basse mer",
+    "rising": "Montante",
+    "falling": "Descendante",
+    "unknown": "Inconnue",
+    "next": "Prochaine {type} à {time}"
+  },
+
+  "logbook": {
+    "no_entries": "Aucune entrée de journal à analyser",
+    "analysis_count": "{count} entrées de journal analysées",
+    "distance": "Distance parcourue",
+    "avg_speed": "Vitesse moyenne",
+    "engine_hours": "Heures moteur",
+    "wind_increasing": "Le vent a augmenté ces dernières heures",
+    "monitor_weather": "Surveillez les prévisions météo",
+    "engine_maintenance": "Envisagez une maintenance moteur",
+    "entry_frequency": "Envisagez des entrées plus fréquentes au journal",
+    "memory_note": "Note système : {note}"
+  },
+
+  "reports": {
+    "weather": "Météo",
+    "tides": "Marées",
+    "sail": "Voiles",
+    "tanks": "Réservoirs",
+    "batteries": "Batteries",
+    "tide_next": "Prochaine {type} à {time}",
+    "recommendations_count": "{count} recommandations",
+    "tanks_critical": "{count} critique(s)",
+    "tanks_low": "{count} bas",
+    "tanks_good": "Tous niveaux OK",
+    "batteries_attention": "{count} nécessitent attention",
+    "batteries_good": "Toutes OK"
+  },
+
+  "units": {
+    "knots": "nœuds",
+    "knots_abbr": "nds",
+    "meters": "mètres",
+    "nautical_miles": "milles nautiques",
+    "nm_abbr": "NM",
+    "hpa": "hPa",
+    "degrees": "degrés",
+    "hours": "heures",
+    "minutes": "minutes"
+  }
+}
