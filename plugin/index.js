@@ -323,7 +323,7 @@ module.exports = function(app) {
 
             const { type } = req.body;
 
-            const validTypes = ['weather', 'sail', 'alerts', 'ais', 'status', 'logbook'];
+            const validTypes = ['weather', 'sail', 'alerts', 'ais', 'status', 'logbook', 'route'];
             if (!type) {
                 return res.status(400).json({ error: 'Analysis type is required' });
             }
