@@ -7,9 +7,9 @@
 
 # Ocearo Core
 
-**Votre Assistant Marin Intelligent pour Signal K**
+**Le Premier Copilote IA de bord pour Signal K**
 
-Ocearo Core est la voix et le cerveau de l'écosystème Ocearo — un plugin Signal K fournissant une assistance à la navigation intelligente, la gestion du mouillage, des briefings météo, du coaching à la voile, la journalisation du carburant et des alertes contextuelles grâce à un LLM local (Ollama) et une synthèse vocale.
+Ocearo Core est la voix et le cerveau de l'écosystème Ocearo — un plugin Signal K avancé transformant votre navire en un bateau intelligent. En tant que véritable Copilote IA, il offre une surveillance globale, la prédiction de pannes, l'optimisation du réglage des voiles selon les polaires de votre bateau, et une planification de route intelligente. Le tout propulsé par un LLM local (Ollama) et une synthèse vocale, garantissant la confidentialité et un fonctionnement hors ligne.
 
 > *"Just A Rather Very Intelligent System"* — Édition Marine 🚢
 
@@ -17,14 +17,16 @@ Ocearo Core est la voix et le cerveau de l'écosystème Ocearo — un plugin Sig
 
 ## **Vue d'ensemble**
 
-Ocearo Core transforme votre serveur Signal K en un assistant intelligent qui :
+Ocearo Core va au-delà des simples tableaux de bord. C'est un Copilote IA intelligent qui :
 
-- 🗣️ **Parle** — Retours vocaux via Piper TTS ou eSpeak
-- 🧠 **Réfléchit** — Analyse contextuelle avec un LLM local (Ollama)
-- 📊 **Surveille** — Données du navire, météo, AIS et alertes en temps réel
+- 👁️ **Surveille** — Surveillance globale de toutes les données du navire, météo et AIS en temps réel
+- 🔮 **Prédit** — Prédiction proactive des pannes et alertes de maintenance avant la casse
+- ⛵ **Optimise** — Optimisation du réglage des voiles et de la route par rapport aux performances polaires de votre navire
+- 🗺️ **Planifie** — Planification de route intelligente et assistance à la navigation
+- 🗣️ **Parle** — Retours vocaux contextuels et alertes via Piper TTS ou eSpeak
+- 🧠 **Réfléchit** — Analyse contextuelle approfondie avec un LLM local (Ollama)
 - ⚓ **Mouille** — Gestion complète du mouillage avec alarmes de dérapage (Signal K Anchor API)
 - 📝 **Journalise** — Journal de bord automatique avec stockage local de secours + journal carburant
-- ⛵ **Coache** — Conseils de réglage des voiles et optimisation de route
 
 **L'écosystème Ocearo :**
 - 👀 **Ocearo-UI** — Les yeux (interface visuelle 3D)
@@ -129,31 +131,54 @@ AnchorPlugin ──► AnchorAlarm ──► Notifications SK
 
 ---
 
-## **Installation**
+## **Installation (Stack Complète)**
 
 ### Prérequis
 
-- **Signal K Server** ≥ 1.x
+- **Docker & Docker Compose**
 - **Node.js** ≥ 18.0.0
-- **Ollama** (optionnel, pour le LLM) — [Installer Ollama](https://ollama.ai)
-- **Piper TTS** (optionnel, pour la voix) — [Installer Piper](https://github.com/rhasspy/piper)
+- **npm**
 
-### Installation via npm
+### Installation étape par étape
 
-```bash
-npm install ocearo-core
-```
+Pour installer l'écosystème complet Ocearo (Core, UI, et les plugins Signal K requis), suivez ce processus de build :
+
+1. **Compiler le plugin Ocearo-Core :**
+   ```bash
+   cd ocearo-core/plugin
+   npm install
+   # ou utilisez le script fourni : ./build-plugin.sh
+   ```
+
+2. **Compiler le plugin SignalK Tides :**
+   ```bash
+   cd ../signalk-tides
+   npm run build
+   ```
+
+3. **Installer les dépendances du Weather Provider :**
+   ```bash
+   cd ../chatel-apps-repository/chatel-signalk-weatherprovider
+   npm install --omit=dev
+   ```
+
+4. **Compiler Ocearo-UI (Next.js) :**
+   ```bash
+   cd ../../ocearo-ui
+   NODE_ENV=production npm run build
+   ```
+
+5. **Déployer via Docker :**
+   ```bash
+   cd ../ocearo-signalk-docker
+   docker compose down
+   docker container rm ocearo-core 2>/dev/null || true
+   docker image rm ocearo-core-ocearo-core 2>/dev/null || true
+   docker compose build --no-cache
+   docker compose up -d
+   ```
 
 Redémarrez Signal K et configurez via **Admin UI → Server → Plugin Config → Océaro Core**.
-
-### Installation depuis les sources
-
-```bash
-cd ~/.signalk/node_modules
-git clone https://github.com/laborima/ocearo-core.git
-cd ocearo-core/plugin
-npm install
-```
 
 ---
 
@@ -211,7 +236,7 @@ Tous les endpoints sont sous `/plugins/ocearo-core/`. Des limites de débit s'ap
 |----------|---------|-------------|
 | `/health` | GET | Vérification de l'état des composants |
 | `/status` | GET | Statut système complet (mode, météo, ancre, backend journal) |
-| `/analyze` | POST | Déclencher une analyse IA (`weather`, `sail`, `alerts`, `ais`, `status`, `logbook`) |
+| `/analyze` | POST | Déclencher une analyse IA (`weather`, `sail`, `alerts`, `ais`, `status`, `logbook`, `route`) |
 | `/speak` | POST | Synthèse vocale avec texte personnalisé (`{ text, priority }`) |
 | `/mode` | POST | Changer le mode de navigation (`{ mode }`) |
 
@@ -321,7 +346,7 @@ Ocearo Core est conçu pour fonctionner de manière transparente avec [Ocearo-UI
 
 - Les contrôles du mouillage appellent les endpoints `/navigation/anchor/*`
 - Le journal carburant utilise `/logbook/fuel` avec repli sur `/logbook/add-entry`
-- Les analyses IA sont déclenchées via `/analyze` avec les types `weather`, `sail`, `alerts`, `ais`, `status`, `logbook`
+- Les analyses IA sont déclenchées via `/analyze` avec les types `weather`, `sail`, `alerts`, `ais`, `status`, `logbook`, `route`
 - Les alarmes moteur sont lues depuis les chemins Signal K `notifications.propulsion.*`
 - Les changements de mode sont propagés via l'endpoint `/mode`
 

@@ -7,9 +7,9 @@
 
 # Ocearo Core
 
-**Your Intelligent Marine Assistant for Signal K**
+**The First AI Co-pilot for Signal K**
 
-Ocearo Core is the voice and brain of the Ocearo ecosystem — a Signal K plugin providing intelligent navigation assistance, anchor management, weather briefings, sail coaching, fuel logging, and contextual alerts using a local LLM (Ollama) and Text-to-Speech output.
+Ocearo Core is the voice and brain of the Ocearo ecosystem — an advanced Signal K plugin transforming your vessel into a smart ship. As a true AI Co-pilot, it provides global vessel monitoring, failure prediction, sail trim optimization based on your boat's polar data, and intelligent route planning. All powered by a local LLM (Ollama) and Text-to-Speech output, ensuring privacy and offline capability.
 
 > *"Just A Rather Very Intelligent System"* — Marine Edition 🚢
 
@@ -17,14 +17,16 @@ Ocearo Core is the voice and brain of the Ocearo ecosystem — a Signal K plugin
 
 ## **Overview**
 
-Ocearo Core transforms your Signal K server into an intelligent assistant that:
+Ocearo Core goes beyond simple dashboards. It's an intelligent AI Co-pilot that:
 
-- 🗣️ **Speaks** — Voice feedback via Piper TTS or eSpeak
-- 🧠 **Thinks** — Contextual analysis with a local LLM (Ollama)
-- 📊 **Monitors** — Vessel data, weather, AIS, and alerts in real time
+- 👁️ **Monitors** — Global surveillance of all vessel data, weather, and AIS in real time
+- 🔮 **Predicts** — Proactive failure prediction and maintenance alerts before things break
+- ⛵ **Optimizes** — Sail trim and course optimization matched against your vessel's polar performance
+- 🗺️ **Plans** — Intelligent route planning and navigation assistance
+- 🗣️ **Speaks** — Contextual voice feedback and alerts via Piper TTS or eSpeak
+- 🧠 **Thinks** — Deep contextual analysis with a local LLM (Ollama)
 - ⚓ **Anchors** — Full anchor management with drag alarms (Signal K Anchor API)
 - 📝 **Logs** — Automatic logbook with local fallback store + fuel log
-- ⛵ **Coaches** — Sail trim and course optimisation advice
 
 **Ocearo Ecosystem:**
 - 👀 **Ocearo-UI** — The eyes (3D visual interface)
@@ -129,31 +131,54 @@ AnchorPlugin ──► AnchorAlarm ──► SK notifications
 
 ---
 
-## **Installation**
+## **Installation (Full Stack)**
 
 ### Prerequisites
 
-- **Signal K Server** ≥ 1.x
+- **Docker & Docker Compose**
 - **Node.js** ≥ 18.0.0
-- **Ollama** (optional, for LLM) — [Install Ollama](https://ollama.ai)
-- **Piper TTS** (optional, for voice) — [Install Piper](https://github.com/rhasspy/piper)
+- **npm**
 
-### Install via npm
+### Step-by-step Installation
 
-```bash
-npm install ocearo-core
-```
+To set up the complete Ocearo ecosystem (Core, UI, and required Signal K plugins), follow this build process:
+
+1. **Build Ocearo-Core Plugin:**
+   ```bash
+   cd ocearo-core/plugin
+   npm install
+   # or use the provided script: ./build-plugin.sh
+   ```
+
+2. **Build SignalK Tides Plugin:**
+   ```bash
+   cd ../signalk-tides
+   npm run build
+   ```
+
+3. **Install Weather Provider Dependencies:**
+   ```bash
+   cd ../chatel-apps-repository/chatel-signalk-weatherprovider
+   npm install --omit=dev
+   ```
+
+4. **Build Ocearo-UI (Next.js):**
+   ```bash
+   cd ../../ocearo-ui
+   NODE_ENV=production npm run build
+   ```
+
+5. **Deploy via Docker:**
+   ```bash
+   cd ../ocearo-signalk-docker
+   docker compose down
+   docker container rm ocearo-core 2>/dev/null || true
+   docker image rm ocearo-core-ocearo-core 2>/dev/null || true
+   docker compose build --no-cache
+   docker compose up -d
+   ```
 
 Restart Signal K and configure via **Admin UI → Server → Plugin Config → Océaro Core**.
-
-### Install from Source
-
-```bash
-cd ~/.signalk/node_modules
-git clone https://github.com/laborima/ocearo-core.git
-cd ocearo-core/plugin
-npm install
-```
 
 ---
 
@@ -211,7 +236,7 @@ All endpoints are under `/plugins/ocearo-core/`. Rate limits apply (120 req/min 
 |----------|--------|-------------|
 | `/health` | GET | Component health check |
 | `/status` | GET | Full system status (mode, weather, anchor, logbook backend) |
-| `/analyze` | POST | Trigger AI analysis (`weather`, `sail`, `alerts`, `ais`, `status`, `logbook`) |
+| `/analyze` | POST | Trigger AI analysis (`weather`, `sail`, `alerts`, `ais`, `status`, `logbook`, `route`) |
 | `/speak` | POST | Speak text via TTS (`{ text, priority }`) |
 | `/mode` | POST | Change operating mode (`{ mode }`) |
 
@@ -321,7 +346,7 @@ Ocearo Core is designed to work seamlessly with [Ocearo-UI](https://github.com/l
 
 - Anchor controls call `/navigation/anchor/*` endpoints
 - Fuel log uses `/logbook/fuel` with fallback to `/logbook/add-entry`
-- AI analysis triggered via `/analyze` with types `weather`, `sail`, `alerts`, `ais`, `status`, `logbook`
+- AI analysis triggered via `/analyze` with types `weather`, `sail`, `alerts`, `ais`, `status`, `logbook`, `route`
 - Engine alarms read from `notifications.propulsion.*` Signal K paths
 - Mode changes propagated via `/mode` endpoint
 
