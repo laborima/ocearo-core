@@ -53,8 +53,8 @@
         "model": {
           "type": "string",
           "title": "LLM Model",
-          "description": "Ollama model name. E.g. qwen2.5:3b, mistral, llama3.",
-          "default": "qwen2.5:3b"
+          "description": "Ollama model name. E.g. llama3.2:3b, mistral, llama3.",
+          "default": "llama3.2:3b"
         },
         "timeoutSeconds": {
           "type": "number",

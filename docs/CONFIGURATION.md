@@ -70,14 +70,14 @@ Configure the Ollama LLM integration.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `llm.ollamaHost` | string | `"http://localhost:11434"` | Ollama server URL |
-| `llm.model` | string | `"qwen2.5:3b"` | LLM model to use |
+| `llm.model` | string | `"llama3.2:3b"` | LLM model to use |
 | `llm.timeoutSeconds` | number | `30` | Request timeout |
 
 ### Recommended Models
 
 | Model | Size | Speed | Quality | RAM Required |
 |-------|------|-------|---------|--------------|
-| `qwen2.5:3b` | 2.0GB | Fast | Good | 4GB |
+| `llama3.2:3b` | 2.0GB | Fast | Good | 4GB |
 | `phi4-mini` | 2.5GB | Fast | Good | 4GB |
 | `llama3` | 4.7GB | Medium | Better | 8GB |
 | `mistral` | 4.1GB | Medium | Better | 8GB |
@@ -273,7 +273,7 @@ Configure alert handling.
   "mode": "sailing",
   "llm": {
     "ollamaHost": "http://localhost:11434",
-    "model": "qwen2.5:3b",
+    "model": "llama3.2:3b",
     "timeoutSeconds": 30
   },
   "voice": {
@@ -324,7 +324,7 @@ Configure alert handling.
   "persona": "jarvis",
   "llm": {
     "ollamaHost": "http://localhost:11434",
-    "model": "qwen2.5:3b",
+    "model": "llama3.2:3b",
     "timeoutSeconds": 60
   },
   "voice": {

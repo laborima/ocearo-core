@@ -205,7 +205,7 @@ Redémarrez Signal K et configurez via **Admin UI → Server → Plugin Config �
 | Paramètre | Description | Défaut |
 |-----------|-------------|--------|
 | `ollamaHost` | URL du serveur Ollama | `http://localhost:11434` |
-| `model` | Nom du modèle | `qwen2.5:3b` |
+| `model` | Nom du modèle | `llama3.2:3b` |
 | `timeoutSeconds` | Délai d'attente | `30` |
 
 ### Voix
@@ -310,7 +310,7 @@ Tous les endpoints sont sous `/plugins/ocearo-core/`. Des limites de débit s'ap
 curl -fsSL https://ollama.ai/install.sh | sh
 
 # Télécharger un modèle
-ollama pull qwen2.5:3b
+ollama pull llama3.2:3b
 
 # Démarrer le serveur
 ollama serve

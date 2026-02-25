@@ -3,7 +3,7 @@
  *
  * Communicates with Ollama for natural language processing.
  * Uses the chat API for structured system/user message flows.
- * Default model: qwen2.5:3b (optimised for RPi5 4-8GB RAM).
+ * Default model: llama3.2:3b (optimised for RPi5 4-8GB RAM).
  */
 
 const { textUtils } = require('../common');
@@ -14,7 +14,7 @@ class LLMModule {
         this.config = config;
         this.cm = cm;
         this.baseUrl = config.llm?.ollamaHost || 'http://localhost:11434';
-        this.model = config.llm?.model || 'qwen2.5:3b';
+        this.model = config.llm?.model || 'llama3.2:3b';
         this.timeout = (config.llm?.timeoutSeconds || 30) * 1000;
         this._connected = false;
         this._lastConnectionCheck = 0;
