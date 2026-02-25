@@ -3,13 +3,16 @@
  *
  * Central coordinator for scheduled analyses, alert processing,
  * AIS collision monitoring, barometric pressure watch, navigation
- * mode management, and AI-powered logbook integration.
+ * mode management, failure prediction, and AI-powered logbook integration.
+ * Acts as the core of the AI Copilot.
  */
 const AlertAnalyzer = require('../analyses/alert');
 const MeteoAnalyzer = require('../analyses/meteo');
 const SailCourseAnalyzer = require('../analyses/sailcourse');
 const SailSettingsAnalyzer = require('../analyses/sailsettings');
 const AISAnalyzer = require('../analyses/ais');
+const FailurePredictor = require('../analyses/failure');
+const RoutePlanner = require('../analyses/route');
 const LogbookManager = require('../logbook');
 const AnchorPlugin = require('../anchor/anchor-plugin');
 
@@ -41,6 +44,8 @@ class OrchestratorBrain {
         this.sailCourseAnalyzer = new SailCourseAnalyzer(app, config, this.llm, this.cm);
         this.sailSettingsAnalyzer = new SailSettingsAnalyzer(app, config, this.llm, this.cm);
         this.aisAnalyzer = new AISAnalyzer(app, config, this.voice, this.cm);
+        this.failurePredictor = new FailurePredictor(app, config, this.llm, this.cm);
+        this.routePlanner = new RoutePlanner(app, config, this.llm, this.cm);
         
         // Scheduling intervals (ms)
         this.schedules = {
@@ -48,6 +53,7 @@ class OrchestratorBrain {
             weatherUpdate: (config.schedules?.weatherUpdate || 300) * 1000,
             sailAnalysis: (config.schedules?.sailAnalysis || 120) * 1000,
             aisCheck: (config.schedules?.aisCheck || 15) * 1000,
+            failureCheck: (config.schedules?.failureCheck || 60) * 1000,
             memoryPersist: (config.schedules?.memoryPersist || 600) * 1000,
             navPoint: (config.schedules?.navPointMinutes || 30) * 60 * 1000,
             hourlyLogbook: 60 * 60 * 1000 // Fixed at 1 hour
@@ -62,6 +68,7 @@ class OrchestratorBrain {
             lastWeatherAnalysis: null,
             lastSailAnalysis: null,
             lastAISCheck: null,
+            lastFailureCheck: null,
             lastPressureTrend: null,
             alertsActive: 0,
             aisTargetsInRange: 0,
@@ -187,6 +194,13 @@ class OrchestratorBrain {
             this.timers.aisCheck = setInterval(() => {
                 this.checkAIS();
             }, this.schedules.aisCheck);
+        }
+
+        // Failure prediction monitoring
+        if (this.config.failurePrediction?.enabled !== false) {
+            this.timers.failureCheck = setInterval(() => {
+                this.checkFailures();
+            }, this.schedules.failureCheck);
         }
         
         // Navigation point updates (every 30 minutes by default)
@@ -336,8 +350,65 @@ class OrchestratorBrain {
                     this.app.debug('Initial AIS scan failed, continuing:', error.message);
                 });
             }
+
+            // Initial failure prediction check (non-blocking)
+            if (this.config.failurePrediction?.enabled !== false) {
+                this.checkFailures().catch(error => {
+                    this.app.debug('Initial failure check failed, continuing:', error.message);
+                });
+            }
         } catch (error) {
             this.app.debug('Initial vessel data fetch failed, skipping initial checks:', error.message);
+        }
+    }
+
+    /**
+     * Check for potential system failures
+     */
+    async checkFailures() {
+        if (!this.state.started) return;
+
+        try {
+            const vesselData = await this.signalkProvider.getVesselData();
+            const result = await this.failurePredictor.analyzeSystems(vesselData);
+
+            this.state.lastFailureCheck = result;
+
+            if (result.status === 'at_risk') {
+                // Speak expert advice
+                if (result.expertAdvice && result.expertAdvice.length > 0) {
+                    const criticalAdvice = result.expertAdvice.filter(a => a.priority === 'critical');
+                    const adviceToSpeak = criticalAdvice.length > 0 ? criticalAdvice : [result.expertAdvice[0]];
+                    
+                    for (const advice of adviceToSpeak) {
+                        this.voice.speak(advice.message, { priority: advice.priority });
+                    }
+                }
+
+                // Try LLM-enriched analysis
+                if (result.analysis && result.analysis.speech) {
+                    this.voice.speak(result.analysis.speech, { priority: 'high' });
+                }
+
+                // Log failure risks to logbook
+                await this.logAnalysisToLogbook('maintenance', {
+                    summary: 'System Failure Risk Detected',
+                    confidence: 0.9,
+                    issues: result.issues,
+                    warnings: result.warnings
+                });
+
+                // Store in memory
+                this.memoryManager.addAlert({
+                    type: 'system_failure_risk',
+                    category: 'maintenance',
+                    issues: result.issues,
+                    warnings: result.warnings,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        } catch (error) {
+            this.app.debug('Failure check error:', error.message);
         }
     }
 
@@ -805,6 +876,27 @@ class OrchestratorBrain {
                     });
                     
                     return { alerts, summary };
+                }
+                case 'route': {
+                    const weatherData = this.state.lastWeatherAnalysis?.data || await this.weatherProvider.getWeatherData();
+                    const routeAnalysis = await this.routePlanner.planRoute(vesselData, weatherData, context);
+                    
+                    if (routeAnalysis.status === 'planned') {
+                        const message = routeAnalysis.analysis?.speech || `Route to destination planned. Distance: ${routeAnalysis.distanceNM} nautical miles, Bearing: ${routeAnalysis.bearing} degrees, ETA: ${routeAnalysis.etaHours} hours.`;
+                        this.voice.speak(message, { priority: 'high' });
+                        
+                        await this.logAnalysisToLogbook('navigation', {
+                            summary: 'Route planned',
+                            distanceNM: routeAnalysis.distanceNM,
+                            etaHours: routeAnalysis.etaHours,
+                            manual: true,
+                            requestType: 'manual_route_analysis'
+                        });
+                    } else {
+                        this.voice.speak(routeAnalysis.message, { priority: 'normal' });
+                    }
+                    
+                    return routeAnalysis;
                 }
                 case 'ais': {
                     const vesselDataAIS = this.signalkProvider.getVesselData();
