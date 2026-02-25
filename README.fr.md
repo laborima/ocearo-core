@@ -131,54 +131,31 @@ AnchorPlugin ──► AnchorAlarm ──► Notifications SK
 
 ---
 
-## **Installation (Stack Complète)**
+## **Installation**
 
 ### Prérequis
 
-- **Docker & Docker Compose**
+- **Signal K Server** ≥ 1.x
 - **Node.js** ≥ 18.0.0
-- **npm**
+- **Ollama** (optionnel, pour le LLM) — [Installer Ollama](https://ollama.ai)
+- **Piper TTS** (optionnel, pour la voix) — [Installer Piper](https://github.com/rhasspy/piper)
 
-### Installation étape par étape
+### Installation via npm
 
-Pour installer l'écosystème complet Ocearo (Core, UI, et les plugins Signal K requis), suivez ce processus de build :
-
-1. **Compiler le plugin Ocearo-Core :**
-   ```bash
-   cd ocearo-core/plugin
-   npm install
-   # ou utilisez le script fourni : ./build-plugin.sh
-   ```
-
-2. **Compiler le plugin SignalK Tides :**
-   ```bash
-   cd ../signalk-tides
-   npm run build
-   ```
-
-3. **Installer les dépendances du Weather Provider :**
-   ```bash
-   cd ../chatel-apps-repository/chatel-signalk-weatherprovider
-   npm install --omit=dev
-   ```
-
-4. **Compiler Ocearo-UI (Next.js) :**
-   ```bash
-   cd ../../ocearo-ui
-   NODE_ENV=production npm run build
-   ```
-
-5. **Déployer via Docker :**
-   ```bash
-   cd ../ocearo-signalk-docker
-   docker compose down
-   docker container rm ocearo-core 2>/dev/null || true
-   docker image rm ocearo-core-ocearo-core 2>/dev/null || true
-   docker compose build --no-cache
-   docker compose up -d
-   ```
+```bash
+npm install ocearo-core
+```
 
 Redémarrez Signal K et configurez via **Admin UI → Server → Plugin Config → Océaro Core**.
+
+### Installation depuis les sources
+
+```bash
+cd ~/.signalk/node_modules
+git clone https://github.com/laborima/ocearo-core.git
+cd ocearo-core/plugin
+npm install
+```
 
 ---
 
