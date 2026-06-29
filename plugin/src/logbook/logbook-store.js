@@ -17,6 +17,7 @@
  */
 
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
 
@@ -138,36 +139,32 @@ class LogbookStore {
      * @param {object} value  entry data
      * @returns {Promise<void>}
      */
-    setResource(id, value) {
-        return new Promise((resolve, reject) => {
-            try {
-                const entry = {
-                    ...value,
-                    id,
-                    updatedAt: new Date().toISOString()
-                };
+    async setResource(id, value) {
+        try {
+            const entry = {
+                ...value,
+                id,
+                updatedAt: new Date().toISOString()
+            };
 
-                if (!entry.datetime) {
-                    entry.datetime = entry.updatedAt;
-                }
-
-                // Write full entry
-                const filePath = path.join(this._entriesDir, `${id}.json`);
-                fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), 'utf8');
-
-                // Update index
-                this._index[id] = {
-                    datetime: entry.datetime,
-                    title: entry.title || entry.text?.substring(0, 60) || 'Logbook entry',
-                    category: entry.category || 'navigation'
-                };
-                this._saveIndex();
-
-                resolve();
-            } catch (err) {
-                reject(new Error(`LogbookStore.setResource failed: ${err.message}`));
+            if (!entry.datetime) {
+                entry.datetime = entry.updatedAt;
             }
-        });
+
+            // Write full entry (atomic, non-blocking)
+            const filePath = path.join(this._entriesDir, `${id}.json`);
+            await this._atomicWrite(filePath, JSON.stringify(entry, null, 2));
+
+            // Update index
+            this._index[id] = {
+                datetime: entry.datetime,
+                title: entry.title || entry.text?.substring(0, 60) || 'Logbook entry',
+                category: entry.category || 'navigation'
+            };
+            await this._saveIndex();
+        } catch (err) {
+            throw new Error(`LogbookStore.setResource failed: ${err.message}`);
+        }
     }
 
     /**
@@ -175,20 +172,17 @@ class LogbookStore {
      * @param {string} id
      * @returns {Promise<void>}
      */
-    deleteResource(id) {
-        return new Promise((resolve, reject) => {
-            try {
-                const filePath = path.join(this._entriesDir, `${id}.json`);
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                }
-                delete this._index[id];
-                this._saveIndex();
-                resolve();
-            } catch (err) {
-                reject(new Error(`LogbookStore.deleteResource failed: ${err.message}`));
-            }
-        });
+    async deleteResource(id) {
+        try {
+            const filePath = path.join(this._entriesDir, `${id}.json`);
+            await fsp.unlink(filePath).catch(err => {
+                if (err.code !== 'ENOENT') throw err;
+            });
+            delete this._index[id];
+            await this._saveIndex();
+        } catch (err) {
+            throw new Error(`LogbookStore.deleteResource failed: ${err.message}`);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -252,7 +246,7 @@ class LogbookStore {
             datetime: record.datetime || new Date().toISOString()
         };
         entries.push(entry);
-        this._saveFuelLog(entries);
+        await this._saveFuelLog(entries);
         return id;
     }
 
@@ -281,9 +275,22 @@ class LogbookStore {
         }
     }
 
-    _saveIndex() {
+    /**
+     * Atomic, non-blocking write: write to a temp file then rename over the target.
+     * rename() is atomic on the same filesystem, so a crash mid-write never leaves a
+     * truncated/corrupt JSON file — the previous version stays intact.
+     * @param {string} filePath
+     * @param {string} data
+     */
+    async _atomicWrite(filePath, data) {
+        const tmp = `${filePath}.${process.pid}.tmp`;
+        await fsp.writeFile(tmp, data, 'utf8');
+        await fsp.rename(tmp, filePath);
+    }
+
+    async _saveIndex() {
         try {
-            fs.writeFileSync(this._indexPath, JSON.stringify(this._index, null, 2), 'utf8');
+            await this._atomicWrite(this._indexPath, JSON.stringify(this._index, null, 2));
         } catch (err) {
             this.app.error('LogbookStore: could not save index:', err.message);
         }
@@ -300,9 +307,9 @@ class LogbookStore {
         return [];
     }
 
-    _saveFuelLog(entries) {
+    async _saveFuelLog(entries) {
         try {
-            fs.writeFileSync(this._fuelLogPath, JSON.stringify(entries, null, 2), 'utf8');
+            await this._atomicWrite(this._fuelLogPath, JSON.stringify(entries, null, 2));
         } catch (err) {
             this.app.error('LogbookStore: could not save fuel log:', err.message);
         }
