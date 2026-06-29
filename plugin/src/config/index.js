@@ -363,7 +363,8 @@ class ConfigManager {
      * @returns {string}
      */
     getStartupMessage() {
-        return this.t(`startup.${this.personality}`) || this.t('startup.default');
+        const key = this.personality.replace(/\s+/g, '_');
+        return this.t(`startup.${key}`) || this.t('startup.default');
     }
 
     /**
@@ -371,7 +372,8 @@ class ConfigManager {
      * @returns {string}
      */
     getShutdownMessage() {
-        return this.t(`shutdown.${this.personality}`) || this.t('shutdown.default');
+        const key = this.personality.replace(/\s+/g, '_');
+        return this.t(`shutdown.${key}`) || this.t('shutdown.default');
     }
 
     /**
