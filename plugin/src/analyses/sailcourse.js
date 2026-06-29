@@ -45,7 +45,7 @@ class SailCourseAnalyzer {
     async analyzeCourse(vesselData, targetBearing, windData, context) {
         try {
             const windRange = this.cm.getWindRange(windData.speed);
-            const current = this.calculateSailingParameters(vesselData, windData, windRange);
+            const current = this.calculateSailingParameters(vesselData, windData, windRange, targetBearing);
             const laylines = this._calculateLaylines(windData.direction, windRange);
 
             const options = this.calculateCourseOptions(
@@ -62,7 +62,7 @@ class SailCourseAnalyzer {
 
             let analysis = null;
             if (this.config.sailing?.useLLMAnalysis !== false && recommended.changeWorthwhile) {
-                analysis = await this.generateCourseAnalysis(recommended, vesselData, windData, context);
+                analysis = await this.generateCourseAnalysis(recommended, vesselData, windData, context, current);
             }
 
             return {
@@ -83,10 +83,17 @@ class SailCourseAnalyzer {
 
     /**
      * Calculate current sailing parameters.
+     * @param {number} [targetBearing] Destination bearing in degrees; when provided,
+     *   VMG is measured toward the target (comparable with each option's vmgTarget),
+     *   not toward the current course-over-ground.
      */
-    calculateSailingParameters(vesselData, windData, windRange) {
+    calculateSailingParameters(vesselData, windData, windRange, targetBearing) {
         const twa = this.calculateTWA(vesselData.heading, windData.direction);
-        const vmg = this.calculateVMG(vesselData.speed, vesselData.heading, vesselData.course);
+        const vmg = this.calculateVMG(
+            vesselData.speed,
+            vesselData.heading,
+            targetBearing !== undefined ? targetBearing : vesselData.course
+        );
         const polarSpeed = this.cm.polar(windData.speed, twa);
         const efficiency = polarSpeed > 0 ? Math.min(vesselData.speed / polarSpeed, 1.5) : 0;
         const optTWA = this.cm.getOptimalTWA(windRange);
@@ -305,10 +312,19 @@ class SailCourseAnalyzer {
 
     // ────────── LLM ANALYSIS ──────────
 
-    async generateCourseAnalysis(recommended, vesselData, windData) {
+    async generateCourseAnalysis(recommended, vesselData, windData, context = {}, current = {}) {
         try {
             const response = await this.llm.getSailRecommendations(
-                vesselData, recommended.heading, windData
+                vesselData, recommended.heading, windData,
+                {
+                    pointOfSail: current.pointOfSail,
+                    polarSpeed: current.polarSpeed,
+                    efficiency: current.efficiency,
+                    recommendation: recommended.recommendation?.message,
+                    mode: context.mode,
+                    ais: context.ais,
+                    tide: context.tide
+                }
             );
             return response;
         } catch (error) {
@@ -325,9 +341,17 @@ class SailCourseAnalyzer {
         return Math.round(twa);
     }
 
-    calculateVMG(speed, heading, course) {
-        if (speed === undefined || heading === undefined || course === undefined) return 0;
-        let angle = Math.abs(heading - course);
+    /**
+     * Velocity Made Good toward a bearing: the component of boat speed projected
+     * onto the target direction. Positive = closing, negative = opening.
+     * @param {number} speed        Boat speed (knots)
+     * @param {number} heading      Current heading (degrees)
+     * @param {number} targetBearing Bearing to make good toward (degrees)
+     * @returns {number} VMG in knots
+     */
+    calculateVMG(speed, heading, targetBearing) {
+        if (speed === undefined || heading === undefined || targetBearing === undefined) return 0;
+        let angle = Math.abs(heading - targetBearing);
         if (angle > 180) angle = 360 - angle;
         return speed * Math.cos(angle * Math.PI / 180);
     }

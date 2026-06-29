@@ -6,6 +6,7 @@
  * mode management, failure prediction, and AI-powered logbook integration.
  * Acts as the core of the AI Copilot.
  */
+const { textUtils } = require('../common');
 const AlertAnalyzer = require('../analyses/alert');
 const MeteoAnalyzer = require('../analyses/meteo');
 const SailCourseAnalyzer = require('../analyses/sailcourse');
@@ -13,6 +14,7 @@ const SailSettingsAnalyzer = require('../analyses/sailsettings');
 const AISAnalyzer = require('../analyses/ais');
 const FailurePredictor = require('../analyses/failure');
 const RoutePlanner = require('../analyses/route');
+const RacingAnalyzer = require('../analyses/racing');
 const LogbookManager = require('../logbook');
 const AnchorPlugin = require('../anchor/anchor-plugin');
 
@@ -46,6 +48,7 @@ class OrchestratorBrain {
         this.aisAnalyzer = new AISAnalyzer(app, config, this.voice, this.cm);
         this.failurePredictor = new FailurePredictor(app, config, this.llm, this.cm);
         this.routePlanner = new RoutePlanner(app, config, this.llm, this.cm);
+        this.racingAnalyzer = new RacingAnalyzer(app, config, this.llm, this.cm, this.weatherProvider);
         
         // Scheduling intervals (ms)
         this.schedules = {
@@ -55,8 +58,10 @@ class OrchestratorBrain {
             aisCheck: (config.schedules?.aisCheck || 15) * 1000,
             failureCheck: (config.schedules?.failureCheck || 60) * 1000,
             memoryPersist: (config.schedules?.memoryPersist || 600) * 1000,
+            depthCheck: (config.schedules?.depthCheck || 15) * 1000,
             navPoint: (config.schedules?.navPointMinutes || 30) * 60 * 1000,
-            hourlyLogbook: 60 * 60 * 1000 // Fixed at 1 hour
+            hourlyLogbook: 60 * 60 * 1000, // Fixed at 1 hour
+            racingAdvice: (config.schedules?.racingAdviceMinutes || 10) * 60 * 1000
         };
         
         // Timers
@@ -72,8 +77,14 @@ class OrchestratorBrain {
             lastPressureTrend: null,
             alertsActive: 0,
             aisTargetsInRange: 0,
-            started: false
+            started: false,
+            depthAlertLevel: null
         };
+
+        // De-duplication of spoken recommendations: key → { signature, ts }.
+        // Avoids repeating the same advice every analysis cycle (e.g. every 120 s).
+        this._spokenLog = new Map();
+        this._announceRepeatMs = (config.alerts?.suppressionMinutes ?? 5) * 60_000;
 
         // Logbook memory — persistent context loaded from logbook on startup
         this.logbookMemory = {
@@ -83,6 +94,66 @@ class OrchestratorBrain {
             keelPosition: null,
             loadedAt: null
         };
+    }
+
+    /**
+     * Monitor depth and raise warnings/alarms with TTS guidance.
+     * Warn < 3.0 m, Alarm < 2.5 m (below keel when available, else transducer).
+     */
+    async checkDepthSafety() {
+        if (!this.state.started) return;
+
+        try {
+            const vesselData = await this.signalkProvider.getVesselData();
+            const depth = vesselData?.environment?.depth;
+            const belowKeel = typeof depth?.belowKeel === 'number' ? depth.belowKeel : null;
+            const belowTransducer = typeof depth?.belowTransducer === 'number' ? depth.belowTransducer : null;
+            const value = belowKeel ?? belowTransducer;
+
+            if (value == null) {
+                return;
+            }
+
+            const warnThreshold = 3.0;
+            const alarmThreshold = 2.5;
+            let level = null;
+            if (value < alarmThreshold) {
+                level = 'alarm';
+            } else if (value < warnThreshold) {
+                level = 'warn';
+            }
+
+            if (level !== this.state.depthAlertLevel && level !== null) {
+                const message = level === 'alarm'
+                    ? `Alerte profondeur ${value.toFixed(1)} mètres. Remonte la dérive et sors de la zone.`
+                    : `Profondeur faible ${value.toFixed(1)} mètres. Prépare à remonter la dérive et à quitter la zone.`;
+
+                // Emit a local notification for downstream processors
+                this.signalkProvider.writePath(
+                    `notifications.${this.config.pluginId || 'ocearo-core'}.depth`,
+                    {
+                        state: level,
+                        message,
+                        method: ['visual', 'sound'],
+                        timestamp: new Date().toISOString(),
+                        value
+                    }
+                );
+
+                // Speak guidance immediately
+                this.voice.announce(message, level === 'alarm' ? 'high' : 'normal');
+            }
+
+            // Clear previous alert if depth is back above warning threshold
+            if (level === null && this.state.depthAlertLevel !== null) {
+                const path = `notifications.${this.config.pluginId || 'ocearo-core'}.depth`;
+                this.signalkProvider.writePath(path, null);
+            }
+
+            this.state.depthAlertLevel = level;
+        } catch (error) {
+            this.app.debug('Depth safety check error:', error.message);
+        }
     }
 
     /**
@@ -171,6 +242,11 @@ class OrchestratorBrain {
         this.timers.alertCheck = setInterval(() => {
             this.checkAlerts();
         }, this.schedules.alertCheck);
+
+        // Depth safety monitoring
+        this.timers.depthCheck = setInterval(() => {
+            this.checkDepthSafety();
+        }, this.schedules.depthCheck);
         
         // Weather updates
         this.timers.weatherUpdate = setInterval(() => {
@@ -214,6 +290,35 @@ class OrchestratorBrain {
                 this.createHourlyLogbookEntry();
             }, this.schedules.hourlyLogbook);
         }
+
+        // Racing advice timer — only started when mode is racing
+        if (this.state.mode === 'racing') {
+            this._startRacingTimer();
+        }
+    }
+
+    /**
+     * Start the periodic racing advice timer.
+     * @private
+     */
+    _startRacingTimer() {
+        if (this.timers.racingAdvice) return;
+        this.timers.racingAdvice = setInterval(() => {
+            this.performRacingAdvice();
+        }, this.schedules.racingAdvice);
+        this.app.debug('Racing advice timer started');
+    }
+
+    /**
+     * Stop the periodic racing advice timer.
+     * @private
+     */
+    _stopRacingTimer() {
+        if (this.timers.racingAdvice) {
+            clearInterval(this.timers.racingAdvice);
+            delete this.timers.racingAdvice;
+            this.app.debug('Racing advice timer stopped');
+        }
     }
 
 
@@ -227,7 +332,7 @@ class OrchestratorBrain {
         
         try {
             const vesselData = await this.signalkProvider.getVesselData();
-            const context = this.memoryManager.getContext();
+            const context = this._enrichedContext();
             const startupConfig = this.config.startupAnalysis || {};
             
             const analysisResults = {
@@ -294,12 +399,23 @@ class OrchestratorBrain {
                 }
             }
             
-            // Generate comprehensive startup report
+            // Generate comprehensive startup report (template-based, always available)
             const startupReport = this.generateStartupReport(analysisResults, startupConfig);
-            
+
+            // Prefer a holistic, natural LLM situation briefing that synthesises
+            // weather + tide + route + AIS; fall back to the template report.
+            let spokenBriefing = null;
+            try {
+                const briefing = await this.generateSituationBriefing();
+                if (briefing?.speech) spokenBriefing = briefing.speech;
+            } catch (error) {
+                this.app.debug('Startup situation briefing unavailable:', error.message);
+            }
+
             // Speak the analysis if enabled
-            if (startupConfig.speakAnalysis !== false && startupReport.speech) {
-                this.voice.speak(startupReport.speech, { priority: 'normal' });
+            if (startupConfig.speakAnalysis !== false) {
+                const toSpeak = spokenBriefing || startupReport.speech;
+                if (toSpeak) this.voice.speak(toSpeak, { priority: 'normal' });
             }
             
             // Log startup analysis to logbook
@@ -432,8 +548,12 @@ class OrchestratorBrain {
             };
 
             if (result.alerts.length > 0) {
-                // Voice announcement for collision risks
-                if (result.speech) {
+                // In racing mode, suppress non-critical AIS voice announcements
+                // to avoid disrupting tactical focus. Danger-level alerts still announce.
+                const isRacing = this.state.mode === 'racing';
+                const hasDangerTargets = result.dangerCount > 0;
+
+                if (result.speech && (!isRacing || hasDangerTargets)) {
                     this.voice.speak(result.speech, { priority: 'critical' });
                 }
 
@@ -510,7 +630,7 @@ class OrchestratorBrain {
         try {
             const notifications = this.signalkProvider.getNotifications();
             const vesselData = await this.signalkProvider.getVesselData();
-            const context = this.memoryManager.getContext();
+            const context = this._enrichedContext();
 
             // Process each notification
             for (const notification of notifications) {
@@ -558,7 +678,7 @@ class OrchestratorBrain {
 
         try {
             const vesselData = await this.signalkProvider.getVesselData();
-            const context = this.memoryManager.getContext();
+            const context = this._enrichedContext();
 
             // Perform weather analysis
             const analysis = await this.meteoAnalyzer.analyzeConditions(
@@ -594,6 +714,45 @@ class OrchestratorBrain {
             } else {
                 this.app.debug('Weather update completed with fallback:', error.message);
             }
+        }
+    }
+
+    /**
+     * Perform periodic racing tactical advice.
+     * Called by the racing timer when mode === 'racing'.
+     */
+    async performRacingAdvice() {
+        if (!this.state.started || this.state.mode !== 'racing') return;
+
+        try {
+            const vesselData = await this.signalkProvider.getVesselData();
+            const courseData = this.signalkProvider.getCourseData();
+            const result = await this.racingAnalyzer.analyze(vesselData, courseData);
+
+            this.state.lastRacingAdvice = {
+                ...result,
+                timestamp: new Date().toISOString()
+            };
+
+            if (result.speechText) {
+                this.voice.speak(result.speechText, { priority: 'high' });
+            }
+
+            await this.logAnalysisToLogbook('racing', {
+                summary: result.speechText || 'Racing tactical advice',
+                recommendations: result.expertAdvice?.map(a => a.message),
+                metrics: {
+                    bearing: result.bearing,
+                    distanceNM: result.distanceNM,
+                    vmgMark: result.vmgMark,
+                    twaMark: result.twaMark,
+                    efficiency: result.efficiency
+                }
+            });
+
+            this.app.debug('Racing advice performed');
+        } catch (error) {
+            this.app.debug('Racing advice failed:', error.message);
         }
     }
 
@@ -735,13 +894,22 @@ class OrchestratorBrain {
         
         try {
             const vesselData = await this.signalkProvider.getVesselData();
-            const context = this.memoryManager.getContext();
+            const context = this._enrichedContext();
+            // Make tide available to sail advice (cached, cheap) so trim/route advice
+            // can account for set, coefficient and depth-at-tide.
+            if (this.tidesProvider) {
+                try {
+                    const tide = await this.tidesProvider.getTideData();
+                    if (tide?.current) context.tide = tide.current;
+                } catch { /* tide optional */ }
+            }
             let courseAnalysis = null;
-            
+
             // Get wind data
             const windData = {
                 speed: vesselData.wind?.speed || 0,
-                direction: vesselData.wind?.direction || 0
+                direction: vesselData.wind?.direction ?? 0,
+                gustSpeed: vesselData.wind?.gust
             };
             
             // Course analysis if destination set
@@ -758,16 +926,15 @@ class OrchestratorBrain {
                     context
                 );
                 
-                // Announce course changes if recommended
+                // Announce course changes if recommended (de-duplicated)
                 if (courseAnalysis.recommended.changeWorthwhile) {
-                    const message = courseAnalysis.analysis?.speech || courseAnalysis.analysis || 
+                    const message = courseAnalysis.analysis?.speech || courseAnalysis.analysis ||
                         courseAnalysis.recommended.recommendation.message;
-                    this.voice.speak(message);
-                }
-
-                // Log significant course recommendations
-                if (courseAnalysis.recommended.changeWorthwhile) {
-                    await this.logAnalysisToLogbook('navigation', courseAnalysis);
+                    if (this._shouldSpeak('sail.course', message)) {
+                        this.voice.speak(message);
+                        // Log significant course recommendations only when actually announced
+                        await this.logAnalysisToLogbook('navigation', courseAnalysis);
+                    }
                 }
             }
             
@@ -784,12 +951,13 @@ class OrchestratorBrain {
             );
             
             if (criticalAdjustments.length > 0) {
-                const settingsMessage = settingsAnalysis.analysis?.speech || settingsAnalysis.analysis || 
+                const settingsMessage = settingsAnalysis.analysis?.speech || settingsAnalysis.analysis ||
                     criticalAdjustments.map(adj => adj.action).join('. ');
-                this.voice.speak(settingsMessage);
-
-                // Log sail setting recommendations
-                await this.logAnalysisToLogbook('performance', settingsAnalysis);
+                if (this._shouldSpeak('sail.settings', settingsMessage)) {
+                    this.voice.speak(settingsMessage);
+                    // Log sail setting recommendations only when actually announced
+                    await this.logAnalysisToLogbook('performance', settingsAnalysis);
+                }
             }
             
             this.state.lastSailAnalysis = {
@@ -809,7 +977,7 @@ class OrchestratorBrain {
     async requestAnalysis(type) {
         try {
             const vesselData = await this.signalkProvider.getVesselData();
-            const context = this.memoryManager.getContext();
+            const context = this._enrichedContext();
 
             switch (type) {
                 case 'weather': {
@@ -876,6 +1044,31 @@ class OrchestratorBrain {
                     });
                     
                     return { alerts, summary };
+                }
+                case 'racing': {
+                    const vesselDataRacing = await this.signalkProvider.getVesselData();
+                    const courseData = this.signalkProvider.getCourseData();
+                    const racingResult = await this.racingAnalyzer.analyze(vesselDataRacing, courseData);
+
+                    if (racingResult.speechText) {
+                        this.voice.speak(racingResult.speechText, { priority: 'high' });
+                    }
+
+                    await this.logAnalysisToLogbook('racing', {
+                        summary: racingResult.speechText || 'Racing tactical analysis',
+                        recommendations: racingResult.expertAdvice?.map(a => a.message),
+                        metrics: {
+                            bearing: racingResult.bearing,
+                            distanceNM: racingResult.distanceNM,
+                            vmgMark: racingResult.vmgMark,
+                            twaMark: racingResult.twaMark,
+                            efficiency: racingResult.efficiency
+                        },
+                        manual: true,
+                        requestType: 'manual_racing_analysis'
+                    });
+
+                    return racingResult;
                 }
                 case 'route': {
                     const weatherData = this.state.lastWeatherAnalysis?.data || await this.weatherProvider.getWeatherData();
@@ -954,6 +1147,19 @@ class OrchestratorBrain {
                     
                     return logbookAnalysis;
                 }
+                case 'briefing': {
+                    // Holistic situation report synthesising weather, tide, route and AIS.
+                    const briefing = await this.generateSituationBriefing();
+                    if (briefing?.speech) {
+                        this.voice.speak(briefing.speech, { priority: 'high' });
+                    }
+                    await this.logAnalysisToLogbook('briefing', {
+                        summary: briefing?.text || briefing?.speech || '',
+                        manual: true,
+                        requestType: 'manual_situation_briefing'
+                    });
+                    return briefing || { speech: '', text: '' };
+                }
                 default:
                     throw new Error(`Unknown analysis type: ${type}`);
             }
@@ -994,16 +1200,28 @@ class OrchestratorBrain {
         
         // Adjust schedules based on mode
         if (mode === 'anchored' || mode === 'moored') {
-            // Stop sail analysis
+            // Stop sail analysis and racing timer
             if (this.timers.sailAnalysis) {
                 clearInterval(this.timers.sailAnalysis);
                 delete this.timers.sailAnalysis;
             }
-        } else if (!this.timers.sailAnalysis) {
-            // Restart sail analysis
-            this.timers.sailAnalysis = setInterval(() => {
-                this.analyzeSailing();
-            }, this.schedules.sailAnalysis);
+            this._stopRacingTimer();
+        } else if (mode === 'racing') {
+            // Ensure sail analysis runs and start racing timer
+            if (!this.timers.sailAnalysis) {
+                this.timers.sailAnalysis = setInterval(() => {
+                    this.analyzeSailing();
+                }, this.schedules.sailAnalysis);
+            }
+            this._startRacingTimer();
+        } else {
+            // Normal sailing/motoring: stop racing timer, ensure sail analysis runs
+            this._stopRacingTimer();
+            if (!this.timers.sailAnalysis) {
+                this.timers.sailAnalysis = setInterval(() => {
+                    this.analyzeSailing();
+                }, this.schedules.sailAnalysis);
+            }
         }
         
         // Log mode change
@@ -1211,6 +1429,27 @@ class OrchestratorBrain {
     }
 
     /**
+     * Gate a spoken recommendation to avoid repeating the same advice every cycle.
+     * Returns true (and records it) only if the message changed for this key, or the
+     * repeat window elapsed since it was last spoken.
+     * @param {string} key       logical channel, e.g. 'sail.course'
+     * @param {string} message   the message about to be spoken
+     * @returns {boolean}
+     */
+    _shouldSpeak(key, message) {
+        const signature = String(message || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        if (!signature) return false;
+
+        const now = Date.now();
+        const last = this._spokenLog.get(key);
+        if (last && last.signature === signature && (now - last.ts) < this._announceRepeatMs) {
+            return false;
+        }
+        this._spokenLog.set(key, { signature, ts: now });
+        return true;
+    }
+
+    /**
      * Calculate bearing between two positions
      */
     calculateBearing(from, to) {
@@ -1413,7 +1652,7 @@ class OrchestratorBrain {
         if (analysisResults.weather && config.includeWeatherForecast !== false) {
             const weather = analysisResults.weather;
             if (weather.speech) {
-                parts.push(weather.speech);
+                parts.push(typeof weather.speech === 'string' ? weather.speech : String(weather.speech || ''));
                 summary.push(`${this.cm.t('reports.weather')}: ${weather.assessment?.windStrength || 'ok'}`);
             }
         }
@@ -1808,6 +2047,134 @@ class OrchestratorBrain {
             lastWeatherBaseline: this.logbookMemory.lastWeatherBaseline,
             keelPosition: this.logbookMemory.keelPosition
         };
+    }
+
+    /**
+     * Navigation context for analysers, enriched with persistent logbook memory
+     * (previous-trip baselines) under a `logbook` key. Additive: existing consumers
+     * that read context.profile/destination are unaffected.
+     * @returns {object}
+     */
+    _enrichedContext() {
+        return {
+            ...this.memoryManager.getContext(),
+            mode: this.state.mode,
+            ais: this.state.lastAISCheck,
+            logbook: this.getLogbookContext()
+        };
+    }
+
+    /**
+     * Great-circle distance in nautical miles between two positions.
+     */
+    _haversineNM(from, to) {
+        if (!from || !to) return 0;
+        const R = 3440.065; // Earth radius in nautical miles
+        const toRad = (d) => d * Math.PI / 180;
+        const dLat = toRad(to.latitude - from.latitude);
+        const dLon = toRad(to.longitude - from.longitude);
+        const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(from.latitude)) * Math.cos(toRad(to.latitude)) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /**
+     * Assemble a unified situation snapshot from every available source
+     * (vessel, wind, weather assessment, tide, AIS, destination, mode). Used to feed
+     * the holistic copilot briefing. Cheap: reuses the last weather assessment when
+     * available and never triggers an LLM call here.
+     * @returns {Promise<object>}
+     */
+    async buildSituation() {
+        const vesselData = await this.signalkProvider.getVesselData();
+        const context = this._enrichedContext();
+
+        // Tide (cached)
+        let tide = null;
+        try { tide = await this.tidesProvider?.getTideData(); } catch { /* optional */ }
+
+        // Weather + assessment: reuse the last analysis if present, else fetch and
+        // assess (assessConditions is pure — no LLM).
+        let weatherData = null;
+        let assessment = null;
+        const last = this.state.lastWeatherAnalysis;
+        if (last?.weatherData && last?.assessment) {
+            weatherData = last.weatherData;
+            assessment = last.assessment;
+        } else if (vesselData.position) {
+            try {
+                weatherData = await this.weatherProvider.getWeatherData(vesselData.position);
+                if (weatherData?.current) {
+                    assessment = this.meteoAnalyzer.assessConditions(weatherData, tide, vesselData);
+                }
+            } catch { /* weather optional */ }
+        }
+
+        // AIS (fresh, pure computation)
+        let ais = this.state.lastAISCheck;
+        let nearest = null;
+        try {
+            const r = this.aisAnalyzer.checkCollisionRisks(vesselData);
+            ais = { totalInRange: r.totalInRange, dangerCount: r.dangerCount, cautionCount: r.cautionCount };
+            const t = (r.targets || []).find(x => x.risk === 'danger') || (r.targets || [])[0];
+            if (t) nearest = { name: t.name, cpa: t.cpa, tcpa: t.tcpa, bearing: t.bearing };
+        } catch { /* AIS optional */ }
+
+        // Destination / ETA
+        let destination = null;
+        const dest = context.destination?.waypoint;
+        if (dest && vesselData.position) {
+            const distanceNM = this._haversineNM(vesselData.position, dest);
+            const bearing = Math.round(this.calculateBearing(vesselData.position, dest));
+            const sog = vesselData.speed || 0;
+            const etaHours = distanceNM > 0 && sog > 0.5 ? distanceNM / sog : null;
+            destination = {
+                name: dest.name || context.destination.name || null,
+                distanceNM: Math.round(distanceNM * 10) / 10,
+                bearing,
+                etaHours: etaHours != null ? Math.round(etaHours * 10) / 10 : null
+            };
+        }
+
+        const cur = weatherData?.current || {};
+        return {
+            mode: this.state.mode,
+            vessel: { speed: vesselData.speed, heading: vesselData.heading, depth: vesselData.depth },
+            wind: {
+                speed: vesselData.wind?.speed ?? cur.windSpeed ?? null,
+                cardinal: textUtils.bearingToCardinal(vesselData.wind?.direction ?? cur.windDirection ?? 0),
+                gust: cur.gustSpeed ?? null
+            },
+            weather: assessment ? {
+                beaufortForce: assessment.beaufort?.force,
+                seaState: assessment.seaState,
+                waveHeight: cur.waveHeight,
+                pressure: cur.pressure,
+                pressureTrend: assessment.pressure?.trend,
+                squallRisk: assessment.squallRisk,
+                windAgainstTide: !!assessment.windAgainstTide?.danger,
+                forecast6h: weatherData?.forecast?.hours6 ? {
+                    windMax: weatherData.forecast.hours6.windSpeedMax,
+                    waveMax: weatherData.forecast.hours6.waveHeightMax
+                } : null
+            } : null,
+            tide: tide?.current ? {
+                height: tide.current.height,
+                tendency: tide.current.tendency,
+                coefficient: tide.current.coefficient
+            } : null,
+            destination,
+            ais: ais ? { ...ais, nearest } : null
+        };
+    }
+
+    /**
+     * Produce a holistic, spoken situation briefing (LLM synthesis of buildSituation()).
+     * @returns {Promise<{speech:string, text:string}|null>}
+     */
+    async generateSituationBriefing() {
+        const situation = await this.buildSituation();
+        return this.llm.generateBriefing(situation);
     }
 }
 

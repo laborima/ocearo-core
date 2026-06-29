@@ -578,11 +578,11 @@ class MeteoAnalyzer {
      */
     async generateAnalysis(weatherData, tideData, vesselData, context, assessment) {
         try {
-            const llmResult = await this.llm.analyzeWeather(weatherData, vesselData, context);
+            const llmResult = await this.llm.analyzeWeather(weatherData, vesselData, context, { tideData, assessment });
             const recommendations = this.generateRecommendations(assessment);
 
-            const speech = llmResult?.speech || llmResult || '';
-            const text = llmResult?.text || speech;
+            const speech = typeof llmResult?.speech === 'string' ? llmResult.speech : (typeof llmResult === 'string' ? llmResult : '');
+            const text = typeof llmResult?.text === 'string' ? llmResult.text : speech;
 
             return {
                 speech,

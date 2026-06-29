@@ -42,14 +42,9 @@ class RoutePlanner {
                 };
             }
 
-            const distance = this._calculateDistance(currentPosition, destination);
             const bearing = this._calculateBearing(currentPosition, destination);
 
-            // Estimate time based on current speed or average polar speed
-            const speed = vesselData.speed > 0.5 ? vesselData.speed : 5; // fallback to 5 knots
-            const estimatedTimeHours = distance / (speed * 1.94384); // Distance in meters, speed in m/s, wait distance is likely in NM if we convert... 
-            // Let's use haversine in NM
-            
+            // Great-circle distance in nautical miles, ETA from current SOG (fallback 5 kn)
             const distanceNM = this._haversineDistanceNM(currentPosition, destination);
             const speedKts = vesselData.speed * 1.94384;
             const avgSpeed = speedKts > 1 ? speedKts : 5;

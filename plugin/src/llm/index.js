@@ -14,11 +14,44 @@ class LLMModule {
         this.config = config;
         this.cm = cm;
         this.baseUrl = config.llm?.ollamaHost || 'http://localhost:11434';
-        this.model = config.llm?.model || 'llama3.2:3b';
+        this.model = config.llm?.model || 'gemma3n:e2b';
         this.timeout = (config.llm?.timeoutSeconds || 30) * 1000;
         this._connected = false;
         this._lastConnectionCheck = 0;
         this._connectionCheckInterval = 60000;
+
+        // Circuit breaker — stop hammering Ollama if it is hanging/failing on the RPi5.
+        this._consecutiveFailures = 0;
+        this._circuitOpenUntil = 0;
+        this._maxConsecutiveFailures = config.llm?.maxConsecutiveFailures || 3;
+        this._circuitCooldownMs = (config.llm?.circuitCooldownSeconds || 120) * 1000;
+    }
+
+    /**
+     * True while the circuit breaker is open (LLM temporarily disabled after repeated failures).
+     */
+    _circuitOpen() {
+        return Date.now() < this._circuitOpenUntil;
+    }
+
+    /**
+     * Record an LLM call outcome and trip/reset the circuit breaker accordingly.
+     * @param {boolean} ok
+     */
+    _recordOutcome(ok) {
+        if (ok) {
+            this._consecutiveFailures = 0;
+            this._circuitOpenUntil = 0;
+            return;
+        }
+        this._consecutiveFailures++;
+        if (this._consecutiveFailures >= this._maxConsecutiveFailures) {
+            this._circuitOpenUntil = Date.now() + this._circuitCooldownMs;
+            this.app.error(
+                `LLM circuit breaker OPEN after ${this._consecutiveFailures} failures; ` +
+                `pausing LLM calls for ${Math.round(this._circuitCooldownMs / 1000)}s`
+            );
+        }
     }
 
     /**
@@ -110,8 +143,8 @@ class LLMModule {
         const lang = this._lang;
 
         const voicePrompt = lang === 'fr'
-            ? `${basePrompt}\n\nRéponds en UNE SEULE phrase courte (max 20 mots), en français, adaptée à la synthèse vocale. Utilise les unités en toutes lettres (nœuds, mètres, degrés, hectopascals). Pas de chiffres décimaux, pas de symboles.`
-            : `${basePrompt}\n\nRespond in ONE short sentence (max 20 words), suitable for text-to-speech. Spell out units (knots, meters, degrees). No decimals, no symbols.`;
+            ? `${basePrompt}\n\nRéponds comme à l'oral, d'une voix de skipper posée: une à deux phrases courtes et naturelles (max 25 mots), en français. Va droit au conseil concret. Unités en toutes lettres (nœuds, mètres, milles nautiques, degrés). Pas de chiffres décimaux, pas de symboles, pas de liste.`
+            : `${basePrompt}\n\nRespond as if speaking aloud, in a calm skipper's voice: one or two short, natural sentences (max 25 words), in English. Get straight to the concrete advice. Spell out units (knots, meters, nautical miles, degrees). No decimals, no symbols, no list.`;
 
         const textPrompt = lang === 'fr'
             ? `${basePrompt}\n\nRéponds en 3-4 phrases en français. Donne une analyse complète avec les données chiffrées, les risques identifiés et une recommandation concrète. Tu peux utiliser des abréviations (kts, hPa, m).`
@@ -137,6 +170,10 @@ class LLMModule {
     async generateCompletion(prompt, options = {}) {
         if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
             throw new Error('Invalid prompt: Prompt must be a non-empty string');
+        }
+
+        if (this._circuitOpen()) {
+            throw new Error('LLM service not available');
         }
 
         if (!await this.checkConnectionAsync()) {
@@ -173,9 +210,11 @@ class LLMModule {
             }
 
             const data = await response.json();
+            this._recordOutcome(true);
             return data.message?.content || data.response || '';
         } catch (error) {
             clearTimeout(timeout);
+            this._recordOutcome(false);
             if (!error.message.includes('LLM service not available')) {
                 this.app.debug('LLM generation failed:', error.message);
             }
@@ -211,22 +250,25 @@ class LLMModule {
 
         if (lang === 'fr') {
             return `${persona} ` +
-                `Tu es le Copilote IA de bord du navire. Tu as une expertise approfondie en: surveillance globale, prédiction de pannes, météo marine, réglage de voiles selon les polaires, manoeuvres, ` +
-                `COLREG, marées et courants, sécurité en mer, et navigation côtière/hauturière. ` +
-                `Mode actuel: ${mode}. Tu réponds TOUJOURS en français, sans exception. ` +
-                `Utilise le vocabulaire marin approprié ` +
-                `(ris, hale-bas, étai, génois, tourmentin, lofer, abattre, empannage, virement). ` +
-                `Pas de markdown, pas de listes, pas de caractères spéciaux. ` +
-                `Donne des conseils actionables, anticipe les problèmes avant qu'ils n'arrivent, et agis comme un véritable copilote intelligent.`;
+                `Tu es le Copilote IA de bord. Expertise: météo marine, marées et courants, réglage de voiles selon les polaires, COLREG, sécurité, navigation côtière et hauturière. ` +
+                `Mode actuel: ${mode}. ` +
+                `MÉTHODE: avant de conseiller, tu CROISES systématiquement toutes les données disponibles — vent (force et direction), état de la mer, marée (sens, coefficient, prochaine étale), profondeur sous quille, trafic AIS (CPA/TCPA), cap, vitesse, position et destination, mode de navigation et polaires du bateau. ` +
+                `Un bon conseil relie les paramètres entre eux (ex: vent contre courant qui se lève, haut-fond à marée descendante, cible AIS qui se rapproche au près). ` +
+                `RÉPONSE: précise (chiffres et manœuvre nommée), actionnable (quoi faire MAINTENANT), priorisée (le plus important d'abord). Anticipe le risque avant qu'il n'arrive. ` +
+                `Si une donnée manque, ne l'invente pas, raisonne avec ce qui est disponible. ` +
+                `TON: naturel et parlé, comme un skipper à la barre. Vocabulaire marin juste (ris, hale-bas, étai, génois, tourmentin, lofer, abattre, empannage, virement). ` +
+                `Réponds TOUJOURS en français. Pas de markdown, pas de listes, pas de symboles; unités en toutes lettres (nœuds, mètres, milles nautiques, degrés, hectopascals).`;
         }
 
         return `${persona} ` +
-            `You are the ship's AI Co-pilot. You have deep expertise in: global surveillance, failure prediction, marine weather, polar-based sail trim, seamanship, ` +
-            `COLREGs, tides and currents, safety at sea, and coastal/offshore navigation. ` +
-            `Current mode: ${mode}. Always respond in English. ` +
-            `Use proper nautical terminology (reef, vang, forestay, genoa, storm jib, luff, bear away, gybe, tack). ` +
-            `No markdown, no bullet points, no special characters. ` +
-            `Give actionable advice, anticipate problems before they happen, and act as a true intelligent co-pilot.`;
+            `You are the ship's AI Co-pilot. Expertise: marine weather, tides and currents, polar-based sail trim, COLREGs, safety, coastal and offshore navigation. ` +
+            `Current mode: ${mode}. ` +
+            `METHOD: before advising, you always CROSS-REFERENCE every available parameter — wind (strength and direction), sea state, tide (set, coefficient, next slack), depth under keel, AIS traffic (CPA/TCPA), heading, speed, position and destination, sailing mode and the boat's polars. ` +
+            `Good advice connects the parameters (e.g. wind-against-tide building, a shoal at falling tide, an AIS target closing while beating). ` +
+            `ANSWER: precise (figures and the named manoeuvre), actionable (what to do NOW), prioritised (most important first). Anticipate risk before it happens. ` +
+            `If data is missing, do not invent it, reason from what is available. ` +
+            `TONE: natural and spoken, like a skipper at the helm. Correct nautical vocabulary (reef, vang, forestay, genoa, storm jib, luff, bear away, gybe, tack). ` +
+            `Always respond in English. No markdown, no bullet points, no symbols; spell out units (knots, meters, nautical miles, degrees, hectopascals).`;
     }
 
     /**
@@ -262,39 +304,101 @@ class LLMModule {
      * @param {Object} vesselData Vessel data
      * @returns {string} Prompt text
      */
-    buildWeatherPrompt(weatherData, vesselData) {
+    buildWeatherPrompt(weatherData, vesselData, context = {}, extra = {}) {
         const current = weatherData.current || {};
         const forecast = weatherData.forecast?.hours6;
         const cardinal = this._bearingToCardinal(current.windDirection ?? 0);
         const lang = this._lang;
+        const assessment = extra.assessment || {};
+        const tide = extra.tideData || null;
+        const fr = lang === 'fr';
 
-        if (lang === 'fr') {
-            let prompt = `Vent: ${current.windSpeed ?? '?'} nœuds du ${cardinal} (${current.windDirection ?? '?'}°)`;
-            if (current.gustSpeed) prompt += `, rafales ${current.gustSpeed} nœuds`;
-            if (current.waveHeight) prompt += `. Houle: ${current.waveHeight}m`;
-            if (current.pressure) prompt += `. Baromètre: ${current.pressure} hPa`;
-            if (forecast) {
-                prompt += `.\nPrévisions 6h: vent max ${forecast.windSpeedMax ?? '?'} nœuds`;
-                if (forecast.waveHeightMax) prompt += `, houle max ${forecast.waveHeightMax}m`;
-            }
-            prompt += `.\nNavire: ${vesselData.speed ?? '?'} nœuds, cap ${vesselData.heading ?? '?'}°`;
-            if (vesselData.depth) prompt += `, fond ${vesselData.depth}m`;
-            prompt += `.\nÉvalue les conditions, identifie les risques, donne une recommandation pratique de skipper expérimenté.`;
-            return prompt;
+        // Build a compact, structured situational brief so the model can cross-reference
+        // every available parameter, not just raw wind.
+        const L = [];
+
+        // ── Wind, sea, pressure ──
+        let wind = fr
+            ? `Vent ${current.windSpeed ?? '?'} nœuds du ${cardinal} (${current.windDirection ?? '?'} degrés)`
+            : `Wind ${current.windSpeed ?? '?'} knots from ${cardinal} (${current.windDirection ?? '?'} degrees)`;
+        if (current.gustSpeed) wind += fr ? `, rafales ${current.gustSpeed} nœuds` : `, gusts ${current.gustSpeed} knots`;
+        if (assessment.beaufort?.force != null) wind += fr ? `, force ${assessment.beaufort.force}` : `, force ${assessment.beaufort.force}`;
+        L.push(wind);
+
+        if (current.waveHeight != null) {
+            L.push(fr ? `Mer ${current.waveHeight} mètres${assessment.seaState ? ` (${assessment.seaState})` : ''}`
+                      : `Sea ${current.waveHeight} meters${assessment.seaState ? ` (${assessment.seaState})` : ''}`);
+        }
+        if (current.pressure != null) {
+            const trend = assessment.pressure?.trend;
+            const trendTxt = trend ? (fr ? `, tendance ${trend}` : `, trend ${trend}`) : '';
+            L.push(fr ? `Baromètre ${current.pressure} hectopascals${trendTxt}` : `Barometer ${current.pressure} hectopascals${trendTxt}`);
+        }
+        if (assessment.squallRisk && assessment.squallRisk !== 'low') {
+            L.push(fr ? `Risque de grain: ${assessment.squallRisk}` : `Squall risk: ${assessment.squallRisk}`);
+        }
+        if (assessment.windAgainstTide?.danger) {
+            L.push(fr ? `ATTENTION vent contre courant (mer creuse)` : `WARNING wind against tide (steep sea)`);
         }
 
-        let prompt = `Wind: ${current.windSpeed ?? '?'} knots from ${cardinal} (${current.windDirection ?? '?'}°)`;
-        if (current.gustSpeed) prompt += `, gusts ${current.gustSpeed} knots`;
-        if (current.waveHeight) prompt += `. Waves: ${current.waveHeight}m`;
-        if (current.pressure) prompt += `. Barometer: ${current.pressure} hPa`;
+        // ── Forecast ──
         if (forecast) {
-            prompt += `.\nForecast 6h: max wind ${forecast.windSpeedMax ?? '?'} knots`;
-            if (forecast.waveHeightMax) prompt += `, max waves ${forecast.waveHeightMax}m`;
+            let f = fr ? `Prévision 6 heures: vent max ${forecast.windSpeedMax ?? '?'} nœuds` : `6-hour forecast: max wind ${forecast.windSpeedMax ?? '?'} knots`;
+            if (forecast.waveHeightMax) f += fr ? `, mer max ${forecast.waveHeightMax} mètres` : `, max sea ${forecast.waveHeightMax} meters`;
+            L.push(f);
         }
-        prompt += `.\nVessel: ${vesselData.speed ?? '?'} knots, heading ${vesselData.heading ?? '?'}°`;
-        if (vesselData.depth) prompt += `, depth ${vesselData.depth}m`;
-        prompt += `.\nAssess conditions, identify risks, give one practical recommendation as an experienced skipper.`;
-        return prompt;
+
+        // ── Tide ──
+        if (tide?.current) {
+            const t = tide.current;
+            let td = fr ? `Marée` : `Tide`;
+            if (t.height != null) td += fr ? ` ${t.height} mètres` : ` ${t.height} meters`;
+            if (t.tendency) td += fr ? ` (${t.tendency === 'rising' ? 'montante' : 'descendante'})` : ` (${t.tendency})`;
+            if (t.coefficient != null) td += fr ? `, coefficient ${t.coefficient}` : `, coefficient ${t.coefficient}`;
+            const next = tide.next?.high && tide.next?.low
+                ? (new Date(tide.next.high.time) < new Date(tide.next.low.time) ? tide.next.high : tide.next.low)
+                : (tide.next?.high || tide.next?.low);
+            if (next?.time) td += fr ? `; prochaine étale à ${this._hhmm(next.time)}` : `; next slack at ${this._hhmm(next.time)}`;
+            L.push(td);
+        }
+
+        // ── Vessel + nav ──
+        let v = fr ? `Navire: ${vesselData.speed ?? '?'} nœuds, cap ${vesselData.heading ?? '?'} degrés` : `Vessel: ${vesselData.speed ?? '?'} knots, heading ${vesselData.heading ?? '?'} degrees`;
+        if (vesselData.depth != null) v += fr ? `, fond ${vesselData.depth} mètres sous quille` : `, depth ${vesselData.depth} meters under keel`;
+        L.push(v);
+        if (context.mode) L.push(fr ? `Mode: ${context.mode}` : `Mode: ${context.mode}`);
+        if (context.destination?.waypoint?.name || context.destination?.name) {
+            L.push(fr ? `Destination: ${context.destination.waypoint?.name || context.destination.name}` : `Destination: ${context.destination.waypoint?.name || context.destination.name}`);
+        }
+
+        // ── AIS traffic ──
+        const ais = context.ais;
+        if (ais && (ais.dangerCount || ais.cautionCount || ais.totalInRange)) {
+            L.push(fr
+                ? `Trafic AIS: ${ais.totalInRange ?? 0} cibles en portée, ${ais.dangerCount ?? 0} dangereuses, ${ais.cautionCount ?? 0} à surveiller`
+                : `AIS traffic: ${ais.totalInRange ?? 0} targets in range, ${ais.dangerCount ?? 0} dangerous, ${ais.cautionCount ?? 0} to watch`);
+        }
+
+        const brief = L.join('. ');
+        const ask = fr
+            ? `\n\nEn croisant TOUS ces éléments (vent, mer, marée, profondeur, trafic, cap, mode), donne le conseil le plus important MAINTENANT, précis et concret, puis une phrase d'anticipation pour les prochaines heures.`
+            : `\n\nCross-referencing ALL of the above (wind, sea, tide, depth, traffic, heading, mode), give the single most important advice NOW, precise and concrete, then one sentence anticipating the next few hours.`;
+
+        return brief + ask;
+    }
+
+    /**
+     * Format an ISO timestamp as HH:MM, tolerant of bad input.
+     * @param {string} iso
+     * @returns {string}
+     */
+    _hhmm(iso) {
+        try {
+            const d = new Date(iso);
+            return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        } catch {
+            return '?';
+        }
     }
 
     /**
@@ -304,26 +408,47 @@ class LLMModule {
      * @param {Object} windData Wind data {speed, direction}
      * @returns {string} Prompt text
      */
-    buildSailPrompt(vesselData, targetHeading, windData) {
+    buildSailPrompt(vesselData, targetHeading, windData, extra = {}) {
         const twa = this.calculateTWA(vesselData.heading, windData.direction);
         const cardinal = this._bearingToCardinal(windData.direction);
-        const lang = this._lang;
+        const fr = this._lang === 'fr';
+        const L = [];
 
-        if (lang === 'fr') {
-            let prompt = `Vent: ${windData.speed} nœuds du ${cardinal}, ` +
-                `Navire: ${vesselData.speed} nœuds, cap ${vesselData.heading}°, ` +
-                `Angle vent réel: ${twa}°, Cap cible: ${targetHeading}°`;
-            if (vesselData.heeling) prompt += `, Gîte: ${vesselData.heeling}°`;
-            prompt += `. Recommande le plan de voilure, les réglages de trim, et les précautions de sécurité pour ces conditions.`;
-            return prompt;
+        // Wind + boat state
+        L.push(fr
+            ? `Vent ${windData.speed} nœuds du ${cardinal}`
+            : `Wind ${windData.speed} knots from ${cardinal}`);
+        L.push(fr
+            ? `Navire ${vesselData.speed} nœuds, cap ${vesselData.heading} degrés, angle de vent réel ${twa} degrés, cap visé ${targetHeading} degrés`
+            : `Boat ${vesselData.speed} knots, heading ${vesselData.heading} degrees, true wind angle ${twa} degrees, target heading ${targetHeading} degrees`);
+        if (vesselData.heeling) L.push(fr ? `Gîte ${Math.round(vesselData.heeling)} degrés` : `Heel ${Math.round(vesselData.heeling)} degrees`);
+
+        // Polar performance (so advice is grounded in the boat's actual potential)
+        if (extra.pointOfSail) L.push(fr ? `Allure: ${extra.pointOfSail}` : `Point of sail: ${extra.pointOfSail}`);
+        if (extra.polarSpeed != null && extra.efficiency != null) {
+            L.push(fr
+                ? `Vitesse cible polaire ${extra.polarSpeed} nœuds, efficacité actuelle ${Math.round(extra.efficiency * 100)} pour cent`
+                : `Polar target speed ${extra.polarSpeed} knots, current efficiency ${Math.round(extra.efficiency * 100)} percent`);
+        }
+        if (extra.recommendation) L.push(fr ? `Piste envisagée: ${extra.recommendation}` : `Option being considered: ${extra.recommendation}`);
+
+        // Environmental cross-references
+        if (vesselData.depth != null) L.push(fr ? `Fond ${vesselData.depth} mètres sous quille` : `Depth ${vesselData.depth} meters under keel`);
+        if (extra.tide?.tendency) {
+            L.push(fr ? `Marée ${extra.tide.tendency === 'rising' ? 'montante' : 'descendante'}${extra.tide.coefficient ? `, coefficient ${extra.tide.coefficient}` : ''}`
+                      : `Tide ${extra.tide.tendency}${extra.tide.coefficient ? `, coefficient ${extra.tide.coefficient}` : ''}`);
+        }
+        if (extra.mode) L.push(fr ? `Mode: ${extra.mode}` : `Mode: ${extra.mode}`);
+        if (extra.ais && (extra.ais.dangerCount || extra.ais.cautionCount)) {
+            L.push(fr ? `Trafic AIS: ${extra.ais.dangerCount || 0} dangereuses, ${extra.ais.cautionCount || 0} à surveiller`
+                      : `AIS traffic: ${extra.ais.dangerCount || 0} dangerous, ${extra.ais.cautionCount || 0} to watch`);
         }
 
-        let prompt = `Wind: ${windData.speed} knots from ${cardinal}, ` +
-            `Boat: ${vesselData.speed} knots heading ${vesselData.heading}°, ` +
-            `TWA: ${twa}°, Target heading: ${targetHeading}°`;
-        if (vesselData.heeling) prompt += `, Heel: ${vesselData.heeling}°`;
-        prompt += `. Recommend sail plan, trim adjustments, and any safety precautions for these conditions.`;
-        return prompt;
+        const ask = fr
+            ? `. En tenant compte des polaires, de la marée, du fond et du trafic, recommande le plan de voilure et les réglages de trim concrets, puis une précaution de sécurité si nécessaire.`
+            : `. Considering the polars, tide, depth and traffic, recommend the sail plan and concrete trim adjustments, then one safety precaution if needed.`;
+
+        return L.join('. ') + ask;
     }
 
     /**
@@ -387,10 +512,10 @@ class LLMModule {
     /**
      * Analyze weather conditions
      */
-    async analyzeWeather(weatherData, vesselData, context) {
+    async analyzeWeather(weatherData, vesselData, context = {}, extra = {}) {
         try {
-            const prompt = this.buildWeatherPrompt(weatherData, vesselData);
-            const result = await this.generateDualOutput(prompt, { temperature: 0.7 });
+            const prompt = this.buildWeatherPrompt(weatherData, vesselData, context, extra);
+            const result = await this.generateDualOutput(prompt, { temperature: 0.6 });
             return result;
         } catch (error) {
             this.app.error('Failed to analyze weather with LLM:', error);
@@ -400,11 +525,98 @@ class LLMModule {
     }
 
     /**
+     * Build a holistic situation-briefing prompt from a unified situation object.
+     * Used for the startup briefing and on-demand "where do we stand" requests.
+     * @param {object} situation  see OrchestratorBrain.buildSituation()
+     * @returns {string}
+     */
+    buildBriefingPrompt(situation = {}) {
+        const fr = this._lang === 'fr';
+        const s = situation;
+        const L = [];
+
+        if (s.mode) L.push(`Mode: ${s.mode}`);
+
+        if (s.vessel) {
+            const v = s.vessel;
+            let line = fr ? `Bateau ${v.speed ?? '?'} nœuds, cap ${v.heading ?? '?'} degrés`
+                          : `Boat ${v.speed ?? '?'} knots, heading ${v.heading ?? '?'} degrees`;
+            if (v.depth != null) line += fr ? `, fond ${v.depth} mètres sous quille` : `, depth ${v.depth} meters under keel`;
+            L.push(line);
+        }
+
+        if (s.wind?.speed != null) {
+            let w = fr ? `Vent ${s.wind.speed} nœuds` : `Wind ${s.wind.speed} knots`;
+            if (s.wind.cardinal) w += fr ? ` du ${s.wind.cardinal}` : ` from ${s.wind.cardinal}`;
+            if (s.wind.gust) w += fr ? `, rafales ${s.wind.gust} nœuds` : `, gusts ${s.wind.gust} knots`;
+            L.push(w);
+        }
+
+        if (s.weather) {
+            const wx = s.weather;
+            if (wx.beaufortForce != null) L.push(fr ? `Force ${wx.beaufortForce}` : `Force ${wx.beaufortForce}`);
+            if (wx.waveHeight != null) L.push(fr ? `Mer ${wx.waveHeight} mètres${wx.seaState ? ` (${wx.seaState})` : ''}` : `Sea ${wx.waveHeight} meters${wx.seaState ? ` (${wx.seaState})` : ''}`);
+            if (wx.pressure != null) L.push(fr ? `Baromètre ${wx.pressure} hectopascals${wx.pressureTrend ? `, ${wx.pressureTrend}` : ''}` : `Barometer ${wx.pressure} hectopascals${wx.pressureTrend ? `, ${wx.pressureTrend}` : ''}`);
+            if (wx.squallRisk && wx.squallRisk !== 'low') L.push(fr ? `Risque de grain ${wx.squallRisk}` : `Squall risk ${wx.squallRisk}`);
+            if (wx.windAgainstTide) L.push(fr ? `Vent contre courant` : `Wind against tide`);
+            if (wx.forecast6h?.windMax != null) L.push(fr ? `Prévision 6 heures: vent max ${wx.forecast6h.windMax} nœuds` : `6-hour forecast: max wind ${wx.forecast6h.windMax} knots`);
+        }
+
+        if (s.tide) {
+            let t = fr ? `Marée` : `Tide`;
+            if (s.tide.height != null) t += fr ? ` ${s.tide.height} mètres` : ` ${s.tide.height} meters`;
+            if (s.tide.tendency) t += fr ? ` ${s.tide.tendency === 'rising' ? 'montante' : 'descendante'}` : ` ${s.tide.tendency}`;
+            if (s.tide.coefficient != null) t += fr ? `, coefficient ${s.tide.coefficient}` : `, coefficient ${s.tide.coefficient}`;
+            L.push(t);
+        }
+
+        if (s.destination?.name) {
+            let d = fr ? `Destination ${s.destination.name}` : `Destination ${s.destination.name}`;
+            if (s.destination.distanceNM != null) d += fr ? ` à ${s.destination.distanceNM} milles nautiques` : ` at ${s.destination.distanceNM} nautical miles`;
+            if (s.destination.bearing != null) d += fr ? `, cap ${s.destination.bearing} degrés` : `, bearing ${s.destination.bearing} degrees`;
+            if (s.destination.etaHours != null) d += fr ? `, ETA ${s.destination.etaHours} heures` : `, ETA ${s.destination.etaHours} hours`;
+            L.push(d);
+        }
+
+        if (s.ais && (s.ais.dangerCount || s.ais.cautionCount || s.ais.totalInRange)) {
+            let a = fr ? `Trafic AIS ${s.ais.totalInRange ?? 0} cibles, ${s.ais.dangerCount ?? 0} dangereuses`
+                       : `AIS ${s.ais.totalInRange ?? 0} targets, ${s.ais.dangerCount ?? 0} dangerous`;
+            if (s.ais.nearest?.name) {
+                a += fr ? `; la plus proche ${s.ais.nearest.name} CPA ${s.ais.nearest.cpa} milles nautiques dans ${s.ais.nearest.tcpa} minutes`
+                        : `; nearest ${s.ais.nearest.name} CPA ${s.ais.nearest.cpa} nautical miles in ${s.ais.nearest.tcpa} minutes`;
+            }
+            L.push(a);
+        }
+
+        const brief = L.length ? L.join('. ') : (fr ? 'Données limitées disponibles.' : 'Limited data available.');
+        const ask = fr
+            ? `\n\nFais un point de situation de skipper: synthétise l'état actuel, le risque principal à surveiller dans les prochaines heures, et le conseil prioritaire. Croise les paramètres entre eux. Reste concret et naturel.`
+            : `\n\nGive a skipper's situation report: synthesise the current state, the main risk to watch over the next few hours, and the priority advice. Connect the parameters. Keep it concrete and natural.`;
+
+        return brief + ask;
+    }
+
+    /**
+     * Generate a holistic situation briefing (dual voice/text output).
+     * @param {object} situation
+     * @returns {{speech:string, text:string}}
+     */
+    async generateBriefing(situation) {
+        try {
+            const prompt = this.buildBriefingPrompt(situation);
+            return await this.generateDualOutput(prompt, { temperature: 0.6 });
+        } catch (error) {
+            this.app.debug('LLM briefing failed:', error.message);
+            return null;
+        }
+    }
+
+    /**
      * Get sail recommendations
      */
-    async getSailRecommendations(vesselData, targetHeading, windData) {
+    async getSailRecommendations(vesselData, targetHeading, windData, extra = {}) {
         try {
-            const prompt = this.buildSailPrompt(vesselData, targetHeading, windData);
+            const prompt = this.buildSailPrompt(vesselData, targetHeading, windData, extra);
             const result = await this.generateDualOutput(prompt, { temperature: 0.5 });
             return result;
         } catch (error) {

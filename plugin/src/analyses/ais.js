@@ -16,6 +16,9 @@ const { conversions, textUtils } = require('../common');
 /** Metres per nautical mile */
 const NM = 1852;
 
+/** Risk ordering for sorting targets (most dangerous first) */
+const RISK_ORDER = { danger: 0, caution: 1, watch: 2, safe: 3 };
+
 class AISAnalyzer {
     /**
      * @param {object} app       SignalK app object
@@ -95,8 +98,7 @@ class AISAnalyzer {
         }
 
         results.sort((a, b) => {
-            const riskOrder = { danger: 0, caution: 1, watch: 2, safe: 3 };
-            const diff = (riskOrder[a.risk] ?? 4) - (riskOrder[b.risk] ?? 4);
+            const diff = (RISK_ORDER[a.risk] ?? 4) - (RISK_ORDER[b.risk] ?? 4);
             if (diff !== 0) return diff;
             return a.cpa - b.cpa;
         });
@@ -304,10 +306,16 @@ class AISAnalyzer {
                 const sog = typeof sogRaw === 'number' ? sogRaw * 1.94384 : null;
                 const cog = typeof cogRaw === 'number' ? cogRaw * (180 / Math.PI) : null;
 
+                const callsign = this._extractNestedValue(vessel, 'communication.callsignVhf');
+                const name = this._extractNestedValue(vessel, 'name')
+                    || this._extractNestedValue(vessel, 'meta.name')
+                    || callsign
+                    || null;
+
                 targets.push({
                     mmsi: id,
-                    name: this._extractNestedValue(vessel, 'name') || id,
-                    callsign: this._extractNestedValue(vessel, 'communication.callsignVhf'),
+                    name: name || 'Navire inconnu',
+                    callsign,
                     shipType: this._extractNestedValue(vessel, 'design.aisShipType.value.name'),
                     position: { latitude: pos.latitude, longitude: pos.longitude },
                     sog,
