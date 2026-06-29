@@ -27,44 +27,82 @@ const textUtils = {
    * @param {string} lang 'fr' | 'en'
    */
   cleanForTTS: (text = '', lang = 'en') => {
+    const isFr = String(lang || 'en').toLowerCase().startsWith('fr');
     try {
       let s = String(text)
-        .replace(/[<>*_#`]/g, '')
+        .replace(/[<>*_#`|~]/g, ' ')
         .replace(/\s+/g, ' ')
-        .replace(/&/g, lang === 'fr' ? 'et' : 'and')
+        .replace(/\s*&\s*/g, isFr ? ' et ' : ' and ')
         .trim();
 
-      if (lang === 'fr') {
+      if (isFr) {
         s = s
-          .replace(/(\d+)[.,](\d+)\s*kts?\b/gi, (_, a, b) => `${a} virgule ${b} nœuds`)
-          .replace(/(\d+)\s*kts?\b/gi, (_, a) => `${a} nœuds`)
-          .replace(/(\d+)[.,](\d+)\s*knots?\b/gi, (_, a, b) => `${a} virgule ${b} nœuds`)
-          .replace(/(\d+)\s*knots?\b/gi, (_, a) => `${a} nœuds`)
-          .replace(/(\d+)[.,](\d+)\s*km\/h\b/gi, (_, a, b) => `${a} virgule ${b} kilomètres par heure`)
-          .replace(/(\d+)\s*km\/h\b/gi, (_, a) => `${a} kilomètres par heure`)
-          .replace(/(\d+)[.,](\d+)\s*hPa\b/gi, (_, a, b) => `${a} virgule ${b} hectopascals`)
-          .replace(/(\d+)\s*hPa\b/gi, (_, a) => `${a} hectopascals`)
-          .replace(/(\d+)[.,](\d+)\s*m\b/gi, (_, a, b) => `${a} virgule ${b} mètres`)
-          .replace(/(\d+)\s*m\b(?!\w)/gi, (_, a) => `${a} mètres`)
-          .replace(/(\d+)[.,](\d+)\s*NM\b/gi, (_, a, b) => `${a} virgule ${b} milles nautiques`)
-          .replace(/(\d+)\s*NM\b/gi, (_, a) => `${a} milles nautiques`)
-          .replace(/(\d+)[.,](\d+)/g, (_, a, b) => `${a} virgule ${b}`)
+          // Unités composées d'abord (contiennent des lettres que les règles simples pourraient manger)
+          .replace(/(\d+)[.,](\d+)\s*km\s*\/\s*h\b/gi, (_, a, b) => `${a} virgule ${b} kilomètres par heure`)
+          .replace(/(\d+)\s*km\s*\/\s*h\b/gi, (_, a) => `${a} kilomètres par heure`)
+          .replace(/(\d+)[.,](\d+)\s*m\s*\/\s*s\b/gi, (_, a, b) => `${a} virgule ${b} mètres par seconde`)
+          .replace(/(\d+)\s*m\s*\/\s*s\b/gi, (_, a) => `${a} mètres par seconde`)
+          // Milles nautiques : "nm"/"NM" (insensible à la casse) et "MN"/"M" (majuscule, le "mn" minuscule = minutes)
+          .replace(/(\d+)[.,](\d+)\s*nm\b/gi, (_, a, b) => `${a} virgule ${b} milles nautiques`)
+          .replace(/(\d+)\s*nm\b/gi, (_, a) => `${a} milles nautiques`)
+          .replace(/(\d+)[.,](\d+)\s*M[Nm]?\b/g, (_, a, b) => `${a} virgule ${b} milles nautiques`)
+          .replace(/(\d+)\s*M[Nm]?\b/g, (_, a) => `${a} milles nautiques`)
+          // Vitesse : nœuds sous toutes les graphies/abréviations (kt, kts, kn, nds, knots, nœuds)
+          .replace(/(\d+)[.,](\d+)\s*(?:kts?|kn|nds?|knots?|n(?:œ|oe)uds?)\b/gi, (_, a, b) => `${a} virgule ${b} nœuds`)
+          .replace(/(\d+)\s*(?:kts?|kn|nds?|knots?|n(?:œ|oe)uds?)\b/gi, (_, a) => `${a} nœuds`)
+          // Pression
+          .replace(/(\d+)[.,](\d+)\s*(?:hpa|mbar)\b/gi, (_, a, b) => `${a} virgule ${b} hectopascals`)
+          .replace(/(\d+)\s*(?:hpa|mbar)\b/gi, (_, a) => `${a} hectopascals`)
+          // Température (le ° est requis pour éviter de capturer un "c"/"f" isolé)
+          .replace(/(\d+)[.,](\d+)\s*°\s*c\b/gi, (_, a, b) => `${a} virgule ${b} degrés Celsius`)
+          .replace(/(\d+)\s*°\s*c\b/gi, (_, a) => `${a} degrés Celsius`)
+          .replace(/(\d+)\s*°\s*f\b/gi, (_, a) => `${a} degrés Fahrenheit`)
+          // Distance/longueur en mètres (lookahead pour ne pas manger min, mph, mètres…)
+          .replace(/(\d+)[.,](\d+)\s*m\b(?![a-zè²°])/gi, (_, a, b) => `${a} virgule ${b} mètres`)
+          .replace(/(\d+)\s*m\b(?![a-zè²°])/gi, (_, a) => `${a} mètres`)
+          // Pourcentage, électricité, volumes
+          .replace(/(\d+)[.,](\d+)\s*%/g, (_, a, b) => `${a} virgule ${b} pour cent`)
+          .replace(/(\d+)\s*%/g, (_, a) => `${a} pour cent`)
+          .replace(/(\d+)\s*V\b/g, (_, a) => `${a} volts`)
+          .replace(/(\d+)[.,](\d+)\s*L\b/g, (_, a, b) => `${a} virgule ${b} litres`)
+          .replace(/(\d+)\s*L\b/g, (_, a) => `${a} litres`)
+          // Cap en degrés (après la température)
           .replace(/°/g, ' degrés')
-          .replace(/\bN\b/g, 'Nord').replace(/\bS\b/g, 'Sud')
-          .replace(/\bE\b/g, 'Est').replace(/\bW\b/g, 'Ouest')
-          .replace(/\bNE\b/g, 'Nord-Est').replace(/\bNW\b/g, 'Nord-Ouest')
-          .replace(/\bSE\b/g, 'Sud-Est').replace(/\bSW\b/g, 'Sud-Ouest')
-          .replace(/\bNNE\b/g, 'Nord-Nord-Est').replace(/\bNNW\b/g, 'Nord-Nord-Ouest')
-          .replace(/\bSSE\b/g, 'Sud-Sud-Est').replace(/\bSSW\b/g, 'Sud-Sud-Ouest')
+          // Décimales restantes
+          .replace(/(\d+)[.,](\d+)/g, (_, a, b) => `${a} virgule ${b}`)
+          // Points cardinaux (3 lettres puis 2 puis 1 ; gère les abréviations FR avec O et EN avec W)
+          .replace(/\bNNE\b/g, 'Nord-Nord-Est').replace(/\bNN[WO]\b/g, 'Nord-Nord-Ouest')
+          .replace(/\bSSE\b/g, 'Sud-Sud-Est').replace(/\bSS[WO]\b/g, 'Sud-Sud-Ouest')
           .replace(/\bENE\b/g, 'Est-Nord-Est').replace(/\bESE\b/g, 'Est-Sud-Est')
-          .replace(/\bWNW\b/g, 'Ouest-Nord-Ouest').replace(/\bWSW\b/g, 'Ouest-Sud-Ouest');
+          .replace(/\b[WO]N[WO]\b/g, 'Ouest-Nord-Ouest').replace(/\b[WO]S[WO]\b/g, 'Ouest-Sud-Ouest')
+          .replace(/\bNE\b/g, 'Nord-Est').replace(/\bN[WO]\b/g, 'Nord-Ouest')
+          .replace(/\bSE\b/g, 'Sud-Est').replace(/\bS[WO]\b/g, 'Sud-Ouest')
+          .replace(/\bN\b/g, 'Nord').replace(/\bS\b/g, 'Sud')
+          .replace(/\bE\b/g, 'Est').replace(/\b[WO]\b/g, 'Ouest')
+          // Supprime les répétitions accidentelles ("mètres mètres")
+          .replace(/\b(mètres|nœuds|degrés|milles nautiques)(?:\s+\1\b)+/gi, '$1');
       } else {
         s = s
+          .replace(/(\d+(?:\.\d+)?)\s*km\s*\/\s*h\b/gi, (_, a) => `${a} kilometers per hour`)
+          .replace(/(\d+(?:\.\d+)?)\s*m\s*\/\s*s\b/gi, (_, a) => `${a} meters per second`)
+          .replace(/(\d+(?:\.\d+)?)\s*(?:nm|nautical\s*miles?)\b/gi, (_, a) => `${a} nautical miles`)
+          .replace(/(\d+(?:\.\d+)?)\s*(?:kts?|kn|knots?)\b/gi, (_, a) => `${a} knots`)
+          .replace(/(\d+(?:\.\d+)?)\s*(?:hpa|mbar)\b/gi, (_, a) => `${a} hectopascals`)
+          .replace(/(\d+(?:\.\d+)?)\s*°\s*c\b/gi, (_, a) => `${a} degrees Celsius`)
+          .replace(/(\d+(?:\.\d+)?)\s*°\s*f\b/gi, (_, a) => `${a} degrees Fahrenheit`)
+          .replace(/(\d+(?:\.\d+)?)\s*m\b(?![a-z²°])/gi, (_, a) => `${a} meters`)
+          .replace(/(\d+(?:\.\d+)?)\s*%/g, (_, a) => `${a} percent`)
+          .replace(/°/g, ' degrees')
           .replace(/(\d+)[.,](\d+)/g, '$1 point $2')
-          .replace(/°/g, ' degrees');
+          .replace(/\bNNE\b/g, 'North North East').replace(/\bNNW\b/g, 'North North West')
+          .replace(/\bSSE\b/g, 'South South East').replace(/\bSSW\b/g, 'South South West')
+          .replace(/\bENE\b/g, 'East North East').replace(/\bESE\b/g, 'East South East')
+          .replace(/\bWNW\b/g, 'West North West').replace(/\bWSW\b/g, 'West South West')
+          .replace(/\bNE\b/g, 'North East').replace(/\bNW\b/g, 'North West')
+          .replace(/\bSE\b/g, 'South East').replace(/\bSW\b/g, 'South West');
       }
 
-      return s.replace(/\s+/g, ' ').trim();
+      return s.replace(/\s+([.,;:!?])/g, '$1').replace(/\s+/g, ' ').trim();
     } catch (error) {
       console.error('Error in cleanForTTS:', error);
       return String(text || '');
