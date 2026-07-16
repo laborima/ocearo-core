@@ -21,6 +21,9 @@ class VoiceModule {
         this.backend = config.voice?.backend || 'kokoro';
         this.enabled = config.voice?.enabled !== false;
 
+        // Do-not-disturb: 'off' | 'safety' (only critical/safety-tagged) | 'all' (silence)
+        this.dndMode = 'off';
+
         // Language used for TTS formatting (defaults to config language)
         this.lang = config.language || 'en';
         
@@ -389,10 +392,28 @@ class VoiceModule {
     }
 
     /**
+     * Set do-not-disturb mode: 'off' | 'safety' | 'all'.
+     * 'safety' lets only safety-tagged or critical-priority messages through,
+     * 'all' silences everything. Pending queue is dropped on activation.
+     */
+    setDnd(mode) {
+        this.dndMode = mode;
+        if (mode !== 'off') {
+            this.queue = [];
+        }
+    }
+
+    _dndBlocks(options = {}) {
+        if (this.dndMode === 'off') return false;
+        if (this.dndMode === 'all') return true;
+        return !(options.safety === true || options.priority === 'critical');
+    }
+
+    /**
      * Speak text using configured backend
      */
     async speak(text, options = {}) {
-        if (!this.enabled || !text) {
+        if (!this.enabled || !text || this._dndBlocks(options)) {
             return;
         }
         
@@ -578,17 +599,21 @@ class VoiceModule {
     /**
      * Queue important announcement
      */
-    announce(text, priority = 'normal') {
+    announce(text, priority = 'normal', options = {}) {
+        const opts = { ...options, priority };
+        if (this._dndBlocks(opts)) {
+            return;
+        }
         if (priority === 'high') {
             // Insert at beginning of queue
-            this.queue.unshift({ text: textUtils.formatTextForTTS(text, this.lang), options: { priority } });
+            this.queue.unshift({ text: textUtils.formatTextForTTS(text, this.lang), options: opts });
 
             // Make sure the queue is actually being drained even if nothing is speaking
             if (!this.speaking) {
                 this.processQueue();
             }
         } else {
-            this.speak(text, { priority });
+            this.speak(text, opts);
         }
     }
 

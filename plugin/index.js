@@ -416,6 +416,36 @@ module.exports = function(app) {
             }
         });
         
+        // Do-not-disturb — silence voice and pause scheduled analyses
+        router.get('/dnd', (req, res) => {
+            if (!brain) {
+                return res.status(503).json({ error: 'Service not initialized' });
+            }
+            res.json(brain.getDndStatus());
+        });
+
+        router.post('/dnd', (req, res) => {
+            if (!brain) {
+                return res.status(503).json({ error: 'Service not initialized' });
+            }
+
+            const { mode, durationMinutes } = req.body;
+            const validModes = ['off', 'safety', 'all'];
+            if (!mode || typeof mode !== 'string' || !validModes.includes(mode)) {
+                return res.status(400).json({ error: 'Invalid mode', validModes });
+            }
+            if (durationMinutes !== undefined &&
+                (typeof durationMinutes !== 'number' || durationMinutes < 0 || durationMinutes > 1440)) {
+                return res.status(400).json({ error: 'durationMinutes must be a number between 0 and 1440' });
+            }
+
+            try {
+                res.json({ success: true, ...brain.setDnd(mode, durationMinutes) });
+            } catch (error) {
+                res.status(400).json({ error: error.message });
+            }
+        });
+
         // TTS — rate-limited separately
         router.post('/speak', rateLimit(speakLimiter), (req, res) => {
             if (!components.voice) {

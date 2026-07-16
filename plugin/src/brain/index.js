@@ -78,8 +78,13 @@ class OrchestratorBrain {
             alertsActive: 0,
             aisTargetsInRange: 0,
             started: false,
-            depthAlertLevel: null
+            depthAlertLevel: null,
+            dnd: 'off',
+            dndUntil: null
         };
+
+        // Auto-revert timer for do-not-disturb
+        this.dndTimer = null;
 
         // De-duplication of spoken recommendations: key → { signature, ts }.
         // Avoids repeating the same advice every analysis cycle (e.g. every 120 s).
@@ -141,7 +146,7 @@ class OrchestratorBrain {
                 );
 
                 // Speak guidance immediately
-                this.voice.announce(message, level === 'alarm' ? 'high' : 'normal');
+                this.voice.announce(message, level === 'alarm' ? 'high' : 'normal', { safety: true });
             }
 
             // Clear previous alert if depth is back above warning threshold
@@ -213,6 +218,10 @@ class OrchestratorBrain {
         // Clear all timers
         Object.values(this.timers).forEach(timer => clearInterval(timer));
         this.timers = {};
+        if (this.dndTimer) {
+            clearTimeout(this.dndTimer);
+            this.dndTimer = null;
+        }
         
         // Stop anchor plugin
         this.anchorPlugin.stop();
@@ -327,6 +336,7 @@ class OrchestratorBrain {
      */
     async performStartupAnalysis() {
         if (!this.state.started) return;
+        if (this.state.dnd !== 'off') return;
         
         this.app.debug('Starting comprehensive startup analysis');
         
@@ -642,7 +652,7 @@ class OrchestratorBrain {
                     );
 
                     if (result && result.shouldSpeak) {
-                        this.voice.announce(result.speech, result.priority);
+                        this.voice.announce(result.speech, result.priority, { safety: true });
                     }
 
                     // Update memory if important
@@ -723,6 +733,7 @@ class OrchestratorBrain {
      */
     async performRacingAdvice() {
         if (!this.state.started || this.state.mode !== 'racing') return;
+        if (this.state.dnd !== 'off') return;
 
         try {
             const vesselData = await this.signalkProvider.getVesselData();
@@ -762,6 +773,7 @@ class OrchestratorBrain {
      */
     async performNavigationPoint() {
         if (!this.state.started) return;
+        if (this.state.dnd !== 'off') return;
         
         try {
             const vesselData = await this.signalkProvider.getVesselData();
@@ -817,6 +829,7 @@ class OrchestratorBrain {
      */
     async createHourlyLogbookEntry() {
         if (!this.state.started) return;
+        if (this.state.dnd !== 'off') return;
         
         try {
             const vesselData = await this.signalkProvider.getVesselData();
@@ -891,6 +904,7 @@ class OrchestratorBrain {
      */
     async analyzeSailing() {
         if (!this.state.started || this.config.mode === 'anchored') return;
+        if (this.state.dnd !== 'off') return;
         
         try {
             const vesselData = await this.signalkProvider.getVesselData();
@@ -1468,11 +1482,47 @@ class OrchestratorBrain {
     /**
      * Get system status including AIS, pressure and anchor data.
      */
+    /**
+     * Set do-not-disturb mode ('off' | 'safety' | 'all').
+     * While active, scheduled LLM analyses are skipped and voice output is
+     * filtered: 'safety' keeps only safety/critical announcements (depth,
+     * SignalK alarms, AIS collision), 'all' silences everything.
+     * @param {string} mode
+     * @param {number} [durationMinutes] auto-revert to 'off' after this delay
+     */
+    setDnd(mode, durationMinutes) {
+        const validModes = ['off', 'safety', 'all'];
+        if (!validModes.includes(mode)) {
+            throw new Error(`Invalid DND mode: ${mode}`);
+        }
+
+        this.state.dnd = mode;
+        this.state.dndUntil = null;
+        this.voice.setDnd(mode);
+
+        if (this.dndTimer) {
+            clearTimeout(this.dndTimer);
+            this.dndTimer = null;
+        }
+        if (mode !== 'off' && durationMinutes > 0) {
+            this.state.dndUntil = new Date(Date.now() + durationMinutes * 60000).toISOString();
+            this.dndTimer = setTimeout(() => this.setDnd('off'), durationMinutes * 60000);
+        }
+
+        this.app.debug(`DND mode set to ${mode}${this.state.dndUntil ? ` until ${this.state.dndUntil}` : ''}`);
+        return this.getDndStatus();
+    }
+
+    getDndStatus() {
+        return { mode: this.state.dnd, until: this.state.dndUntil };
+    }
+
     getSystemStatus() {
         const weatherAssessment = this.state.lastWeatherAnalysis?.assessment;
         return {
             mode: this.state.mode,
             started: this.state.started,
+            dnd: this.getDndStatus(),
             alertsActive: this.state.alertsActive,
             lastWeatherUpdate: this.state.lastWeatherAnalysis?.timestamp,
             lastSailAnalysis: this.state.lastSailAnalysis?.timestamp,
