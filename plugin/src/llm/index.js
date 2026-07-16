@@ -150,10 +150,10 @@ class LLMModule {
             ? `${basePrompt}\n\nRéponds en 3-4 phrases en français. Donne une analyse complète avec les données chiffrées, les risques identifiés et une recommandation concrète. Tu peux utiliser des abréviations (kts, hPa, m).`
             : `${basePrompt}\n\nRespond in 3-4 sentences in English. Give a complete analysis with figures, identified risks and one concrete recommendation. You may use abbreviations (kts, hPa, m).`;
 
-        const [speechRaw, textRaw] = await Promise.all([
-            this.generateCompletion(voicePrompt, { ...options, max_tokens: 80 }),
-            this.generateCompletion(textPrompt, { ...options, max_tokens: 250 })
-        ]);
+        // Sequential on purpose: parallel generations contend for the RPi5's
+        // CPU-capped Ollama (CPUQuota) and both end up exceeding the timeout.
+        const speechRaw = await this.generateCompletion(voicePrompt, { ...options, max_tokens: 80 });
+        const textRaw = await this.generateCompletion(textPrompt, { ...options, max_tokens: 250 });
 
         return {
             speech: textUtils.cleanForTTS(speechRaw, lang),
