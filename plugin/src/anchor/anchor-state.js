@@ -52,12 +52,18 @@ class AnchorState {
 
     /**
      * Persist current state to disk.
+     * Atomic write (temp file + rename) so a crash/power-loss mid-write never
+     * corrupts the state file. State changes are infrequent, so a synchronous
+     * write here is fine and keeps the existing call sites simple (no await).
      */
     save() {
+        const tmp = `${this._stateFilePath}.tmp`;
         try {
-            fs.writeFileSync(this._stateFilePath, JSON.stringify(this._state, null, 2), 'utf8');
+            fs.writeFileSync(tmp, JSON.stringify(this._state, null, 2), 'utf8');
+            fs.renameSync(tmp, this._stateFilePath);
         } catch (err) {
             this.app.warn(`Could not save anchor state: ${err.message}`);
+            try { fs.unlinkSync(tmp); } catch { /* ignore cleanup failure */ }
         }
     }
 

@@ -21,6 +21,23 @@ class MarineWeatherDataProvider {
 
         this.requestTimeout = (config.weatherProvider?.timeoutSeconds || 15) * 1000;
         this._serverUrl = null;
+
+        // Forecast cache — the upstream forecast changes on an hourly scale, so we
+        // avoid re-fetching on every analysis cycle (every 10–30 s). Keyed by rounded
+        // position so small GPS jitter does not invalidate the cache.
+        this._forecastCacheTtl = (config.weatherProvider?.cacheSeconds || 600) * 1000;
+        this._forecastCache = null; // { key, data, ts }
+        // Backoff after rate-limit / repeated failures, to stop hammering the API.
+        this._backoffUntil = 0;
+    }
+
+    /**
+     * Build a cache key from a position rounded to ~1 km.
+     * @param {Object} position
+     * @returns {string}
+     */
+    _cacheKey(position) {
+        return `${position.latitude.toFixed(2)},${position.longitude.toFixed(2)}`;
     }
 
     /**
@@ -100,6 +117,21 @@ class MarineWeatherDataProvider {
             return null;
         }
 
+        const key = this._cacheKey(position);
+        const now = Date.now();
+
+        // Serve from cache while fresh.
+        if (this._forecastCache && this._forecastCache.key === key &&
+            now - this._forecastCache.ts < this._forecastCacheTtl) {
+            return this._forecastCache.data;
+        }
+
+        // Respect an active backoff window (rate-limit / repeated failures):
+        // return stale cache if we have one, otherwise null.
+        if (now < this._backoffUntil) {
+            return this._forecastCache?.data ?? null;
+        }
+
         if (!this._serverUrl) {
             this._serverUrl = this._detectServerUrl();
         }
@@ -107,32 +139,57 @@ class MarineWeatherDataProvider {
         const url = `${this._serverUrl}/signalk/v2/api/weather/forecasts/point` +
             `?lat=${position.latitude}&lon=${position.longitude}&count=48`;
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
+        // Up to 3 attempts with exponential backoff for transient network errors.
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
 
-        try {
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeoutId);
+            try {
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
 
-            if (!response.ok) {
-                if (response.status === 400 || response.status === 404) {
-                    this.app.debug('Weather API not available on this server');
-                    return null;
+                if (response.status === 429) {
+                    // Rate-limited: honour Retry-After (seconds) or back off 60 s.
+                    const retryAfter = parseInt(response.headers.get('retry-after'), 10);
+                    const waitMs = Number.isFinite(retryAfter) ? retryAfter * 1000 : 60_000;
+                    this._backoffUntil = Date.now() + waitMs;
+                    this.app.debug(`Weather API rate-limited; backing off ${Math.round(waitMs / 1000)}s`);
+                    return this._forecastCache?.data ?? null;
                 }
-                throw new Error(`Weather API HTTP ${response.status}`);
-            }
 
-            const raw = await response.json();
-            return this._parseForecastResponse(raw);
-        } catch (error) {
-            clearTimeout(timeoutId);
-            if (error.name === 'AbortError') {
-                this.app.debug('Weather API request timed out');
-            } else {
-                this.app.debug('Weather API fetch failed:', error.message);
+                if (!response.ok) {
+                    if (response.status === 400 || response.status === 404) {
+                        this.app.debug('Weather API not available on this server');
+                        return null;
+                    }
+                    throw new Error(`Weather API HTTP ${response.status}`);
+                }
+
+                const raw = await response.json();
+                const data = this._parseForecastResponse(raw);
+                this._forecastCache = { key, data, ts: Date.now() };
+                return data;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                const isTimeout = error.name === 'AbortError';
+                this.app.debug(
+                    `Weather API fetch failed (attempt ${attempt}/${maxAttempts}): ` +
+                    (isTimeout ? 'timeout' : error.message)
+                );
+
+                if (attempt < maxAttempts) {
+                    // Exponential backoff: 500 ms, 1000 ms…
+                    await new Promise(r => setTimeout(r, 500 * 2 ** (attempt - 1)));
+                    continue;
+                }
+                // Give up: short backoff and return stale cache if available.
+                this._backoffUntil = Date.now() + 30_000;
+                return this._forecastCache?.data ?? null;
             }
-            return null;
         }
+
+        return this._forecastCache?.data ?? null;
     }
 
     /**

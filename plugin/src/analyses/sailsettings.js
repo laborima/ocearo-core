@@ -309,12 +309,19 @@ class SailSettingsAnalyzer {
     /**
      * Generate LLM analysis for sail settings.
      */
-    async generateSettingsAnalysis(conditions, adjustments, vesselData, windData) {
+    async generateSettingsAnalysis(conditions, adjustments, vesselData, windData, context = {}) {
         try {
             const response = await this.llm.getSailRecommendations(
                 { ...vesselData, heeling: conditions.heeling },
                 vesselData.heading,
-                windData
+                windData,
+                {
+                    pointOfSail: conditions.pointOfSail,
+                    recommendation: adjustments?.[0]?.action,
+                    mode: context.mode,
+                    ais: context.ais,
+                    tide: context.tide
+                }
             );
             return response;
         } catch (error) {

@@ -25,6 +25,11 @@ class TidesDataProvider {
             coeffNow:   'environment.tide.coeffNow',
             coeffNext:  'environment.tide.coeffNext'
         };
+
+        // Tide data changes on an hour/minute scale; memoise the transform so we
+        // don't re-read and re-compute on every analysis cycle (every 10–30 s).
+        this._cacheTtl = (config.tidesProvider?.cacheSeconds || 60) * 1000;
+        this._cache = null; // { data, ts }
     }
 
     /**
@@ -54,6 +59,11 @@ class TidesDataProvider {
             return null;
         }
 
+        const now = Date.now();
+        if (this._cache && now - this._cache.ts < this._cacheTtl) {
+            return this._cache.data;
+        }
+
         try {
             const raw = this._readSignalKTideData();
             if (!raw) {
@@ -61,7 +71,9 @@ class TidesDataProvider {
                 return null;
             }
 
-            return this._transform(raw);
+            const data = this._transform(raw);
+            this._cache = { data, ts: now };
+            return data;
         } catch (error) {
             this.app.error('Failed to fetch tide data:', error);
             return null;

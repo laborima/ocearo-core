@@ -47,9 +47,12 @@ class SignalKDataProvider {
       await this.subscribeToNotifications(manager);
       this._debug('Subscribed to notifications');
     } catch (err) {
-      // make sure start errors bubble with useful information
-      this._error('Failed to start SignalKDataProvider:', err && err.message ? err.message : err);
-      throw err;
+      // A transient subscription failure must NOT take down the whole plugin.
+      // Degrade to limited mode (read-only via getSelfPath) and keep running.
+      this._error(
+        'SignalKDataProvider subscription failed; running in limited mode:',
+        err && err.message ? err.message : err
+      );
     }
   }
 
@@ -111,7 +114,17 @@ class SignalKDataProvider {
       skPaths.environment.outside.humidity,
       skPaths.environment.wind.directionTrue,
       'electrical.batteries.*',
-      'propulsion.*'
+      'propulsion.*',
+      // Course Provider paths (SignalK Course Provider spec)
+      'navigation.courseGreatCircle.nextPoint',
+      'navigation.courseGreatCircle.nextPoint.position',
+      'navigation.courseGreatCircle.nextPoint.href',
+      'navigation.courseGreatCircle.nextPoint.type',
+      'navigation.courseGreatCircle.previousPoint',
+      'navigation.courseGreatCircle.activeRoute',
+      'navigation.courseGreatCircle.activeRoute.href',
+      'navigation.currentRoute.waypoints',
+      'navigation.currentRoute.activeWaypointIndex'
     ];
 
     const subscription = {
@@ -283,6 +296,12 @@ class SignalKDataProvider {
             const isNew = !this.lastNotificationKeys.has(path);
             this._emitSafe('notification.raised', { path, notification: value, isNew });
             this.lastNotificationKeys.add(path);
+            // Safety cap: notification paths are normally stable and few, but guard
+            // against pathological growth (e.g. paths carrying timestamps/ids).
+            if (this.lastNotificationKeys.size > 2000) {
+              this._debug('Notification key set exceeded 2000 entries; clearing to bound memory');
+              this.lastNotificationKeys.clear();
+            }
           }
         });
       });
@@ -325,7 +344,7 @@ class SignalKDataProvider {
    */
   getVesselData() {
     try {
-      return {
+      const raw = {
         navigation: {
           speedOverGround: this._getSelfPath(skPaths.navigation.speedOverGround),
           courseOverGroundTrue: this._getSelfPath(skPaths.navigation.courseOverGroundTrue),
@@ -343,7 +362,8 @@ class SignalKDataProvider {
             speedApparent: this._getSelfPath(skPaths.environment.wind.speedApparent),
             angleApparent: this._getSelfPath(skPaths.environment.wind.angleApparent),
             speedTrue: this._getSelfPath(skPaths.environment.wind.speedTrue),
-            angleTrueWater: this._getSelfPath(skPaths.environment.wind.angleTrueWater)
+            angleTrueWater: this._getSelfPath(skPaths.environment.wind.angleTrueWater),
+            directionTrue: this._getSelfPath(skPaths.environment.wind.directionTrue)
           },
           water: {
             temperature: this._getSelfPath(skPaths.environment.water.temperature)
@@ -359,10 +379,60 @@ class SignalKDataProvider {
         },
         propulsion: this._getSelfPath('propulsion') || {}
       };
+
+      // Flat, display-unit fields expected by the analysers (speed in knots, angles in
+      // degrees, depth in metres). Kept ALONGSIDE the raw SI structure so both the
+      // raw-shape consumers and the flat-shape consumers work. Without this the weather
+      // and sail analysers received undefined speed/heading/wind/position.
+      return { ...raw, ...this._flattenVessel(raw) };
     } catch (error) {
       this._error('Error getting vessel data:', error);
       return {};
     }
+  }
+
+  /**
+   * Derive flat, display-unit vessel fields from the raw SignalK structure.
+   * @param {object} raw
+   * @returns {object} { speed, sog, cog, heading, course, position, depth, wind:{...}, pressure }
+   */
+  _flattenVessel(raw) {
+    const nav = raw.navigation || {};
+    const env = raw.environment || {};
+    const num = (v) => (typeof v === 'number' && !isNaN(v) ? v : undefined);
+    const kn = (ms) => (num(ms) !== undefined ? Math.round(conversions.msToKnots(ms) * 10) / 10 : undefined);
+    const deg = (rad) => (num(rad) !== undefined ? conversions.normalizeAngle(conversions.radToDeg(rad)) : undefined);
+
+    const heading = deg(nav.headingTrue) ?? deg(nav.headingMagnetic);
+    const course = deg(nav.courseOverGroundTrue) ?? deg(nav.courseOverGroundMagnetic);
+
+    // True wind compass direction: prefer directionTrue, else heading + relative true-wind angle.
+    let windDir = deg(env.wind?.directionTrue);
+    if (windDir === undefined && heading !== undefined && num(env.wind?.angleTrueWater) !== undefined) {
+      windDir = conversions.normalizeAngle(heading + conversions.radToDeg(env.wind.angleTrueWater));
+    }
+    if (windDir === undefined && heading !== undefined && num(env.wind?.angleApparent) !== undefined) {
+      windDir = conversions.normalizeAngle(heading + conversions.radToDeg(env.wind.angleApparent));
+    }
+
+    const depth = num(env.depth?.belowKeel) ?? num(env.depth?.belowTransducer);
+
+    return {
+      speed: kn(nav.speedOverGround),
+      sog: kn(nav.speedOverGround),
+      cog: course !== undefined ? Math.round(course) : undefined,
+      heading: heading !== undefined ? Math.round(heading) : undefined,
+      course: course !== undefined ? Math.round(course) : undefined,
+      position: nav.position || undefined,
+      depth: depth !== undefined ? Math.round(depth * 10) / 10 : undefined,
+      wind: {
+        speed: kn(env.wind?.speedTrue) ?? kn(env.wind?.speedApparent),
+        direction: windDir !== undefined ? Math.round(windDir) : undefined,
+        speedApparent: kn(env.wind?.speedApparent),
+        angleApparent: deg(env.wind?.angleApparent)
+      },
+      pressure: num(env.outside?.pressure) !== undefined ? Math.round(env.outside.pressure / 100) : undefined
+    };
   }
 
   /**
@@ -452,6 +522,96 @@ class SignalKDataProvider {
     }
 
     return alerts;
+  }
+
+  /**
+   * Resolve the next waypoint from Course Provider data.
+   * Tries navigation.courseGreatCircle.nextPoint first,
+   * then falls back to navigation.currentRoute.waypoints.
+   * @returns {{ position, name, bearing, distanceNM } | null}
+   */
+  getCourseData() {
+    try {
+      // Primary: Course Provider nextPoint
+      const nextPoint = this._getSelfPath('navigation.courseGreatCircle.nextPoint');
+      const ownPosition = this._getSelfPath(skPaths.navigation.position);
+
+      if (nextPoint && nextPoint.position) {
+        const bearing = ownPosition
+          ? this._bearingBetween(ownPosition, nextPoint.position)
+          : null;
+        const distanceNM = ownPosition
+          ? this._distanceNM(ownPosition, nextPoint.position)
+          : null;
+        return {
+          source: 'courseProvider',
+          nextPoint: nextPoint.position,
+          name: nextPoint.name || nextPoint.href || 'Mark',
+          type: nextPoint.type || 'waypoint',
+          bearing,
+          distanceNM
+        };
+      }
+
+      // Fallback: currentRoute waypoints
+      const waypoints = this._getSelfPath('navigation.currentRoute.waypoints');
+      const activeIdx = this._getSelfPath('navigation.currentRoute.activeWaypointIndex');
+
+      if (Array.isArray(waypoints) && waypoints.length > 0) {
+        const idx = typeof activeIdx === 'number' ? activeIdx : 0;
+        const wp = waypoints[idx];
+        if (wp && wp.position) {
+          const bearing = ownPosition
+            ? this._bearingBetween(ownPosition, wp.position)
+            : null;
+          const distanceNM = ownPosition
+            ? this._distanceNM(ownPosition, wp.position)
+            : null;
+          return {
+            source: 'currentRoute',
+            nextPoint: wp.position,
+            name: wp.name || `WP${idx}`,
+            type: 'waypoint',
+            bearing,
+            distanceNM
+          };
+        }
+      }
+
+      return null;
+    } catch (err) {
+      this._error('Error resolving course data:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Calculate bearing from pos1 to pos2 (decimal degrees).
+   * @private
+   */
+  _bearingBetween(pos1, pos2) {
+    const toRad = x => x * Math.PI / 180;
+    const lat1 = toRad(pos1.latitude);
+    const lat2 = toRad(pos2.latitude);
+    const dLon = toRad(pos2.longitude - pos1.longitude);
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+    return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+  }
+
+  /**
+   * Haversine distance in nautical miles.
+   * @private
+   */
+  _distanceNM(pos1, pos2) {
+    const toRad = x => x * Math.PI / 180;
+    const R = 3440.065;
+    const dLat = toRad(pos2.latitude - pos1.latitude);
+    const dLon = toRad(pos2.longitude - pos1.longitude);
+    const lat1 = toRad(pos1.latitude);
+    const lat2 = toRad(pos2.latitude);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   // -------------------------

@@ -50,12 +50,19 @@
           "description": "Ollama server URL.",
           "default": "http://localhost:11434"
         },
-        "model": {
-          "type": "string",
-          "title": "LLM Model",
-          "description": "Ollama model name. E.g. llama3.2:3b, mistral, llama3.",
-          "default": "llama3.2:3b"
-        },
+       "model": {
+        "type": "string",
+        "title": "LLM Model",
+        "description": "Ollama model name. Best models for Raspberry Pi 5 (8GB). Recommended: gemma3n:e2b (best quality/speed ratio) or gemma3:1b (fastest, lightest).",
+        "enum": [
+          "gemma3n:e2b",
+          "gemma3:1b",
+          "qwen3:1.7b",
+          "phi3:mini",
+          "llama3.2:3b"
+        ],
+        "default": "gemma3n:e2b"
+      },
         "timeoutSeconds": {
           "type": "number",
           "title": "AI Timeout (s)",
@@ -82,8 +89,28 @@
           "type": "string",
           "title": "TTS Backend",
           "description": "piper = high quality (RPi5), espeak = lightweight, console = logs only.",
-          "enum": ["piper", "espeak", "console"],
-          "default": "piper"
+          "enum": ["kokoro", "piper", "espeak", "console"],
+          "default": "kokoro"
+        },
+        "kokoroVoiceEn": {
+          "type": "string",
+          "title": "Kokoro voice (EN)",
+          "description": "English Kokoro voice.",
+          "enum": ["af_heart","af_bella","am_adam","am_michael","bf_emma","bm_george"],
+          "default": "af_heart"
+        },
+        "kokoroVoiceFr": {
+          "type": "string",
+          "title": "Kokoro voice (FR)",
+          "description": "French Kokoro voice.",
+          "enum": ["ff_siwis"],
+          "default": "ff_siwis"
+        },
+        "kokoroSpeed": {
+          "type": "number",
+          "title": "Speech speed (0.8–1.3)",
+          "description": "Playback speed for Kokoro TTS.",
+          "default": 1.0
         },
         "piper": {
           "type": "object",
@@ -116,14 +143,8 @@
     "logbook": {
       "type": "object",
       "title": "Logbook",
-      "description": "Integration with signalk-logbook plugin and AI logging settings.",
+      "description": "Local logbook storage and AI logging settings.",
       "properties": {
-        "enabled": {
-          "type": "boolean",
-          "title": "Enable signalk-logbook",
-          "description": "Use signalk-logbook plugin as backend. Otherwise, local storage is used.",
-          "default": false
-        },
         "author": {
           "type": "string",
           "title": "AI Entry Author",
@@ -209,6 +230,14 @@
           "default": 15,
           "minimum": 5,
           "maximum": 60
+        },
+        "racingAdviceMinutes": {
+          "type": "number",
+          "title": "Racing Advice Interval (min)",
+          "description": "Interval in minutes between automatic tactical racing advice in racing mode.",
+          "default": 10,
+          "minimum": 5,
+          "maximum": 30
         }
       }
     },

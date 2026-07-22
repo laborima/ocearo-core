@@ -267,6 +267,42 @@ module.exports = function(app) {
         router.use(rateLimit(generalLimiter));
         router.use(requireJson);
 
+        // Authentication middleware - check if user is authenticated or if security is disabled
+        router.use((req, res, next) => {
+            // If security strategy is available and requires authentication
+            if (app.securityStrategy) {
+                // Check if request is authenticated via passport
+                const isAuthenticated = req.isAuthenticated && req.isAuthenticated();
+
+                // Get user type/role from req.user (SignalK sets this: 'admin', 'read', 'readWrite', etc.)
+                const userType = req.user && req.user.type;
+                const hasValidRole = userType === 'admin' || userType === 'readWrite' ||
+                    userType === 'write' || userType === 'read' || userType === 'readwrite';
+
+                // Check if read-only access is allowed for this request path
+                const allowReadOnly = typeof app.securityStrategy.allowReadOnly === 'function'
+                    ? app.securityStrategy.allowReadOnly(req)
+                    : false;
+
+                // Allow access if:
+                // 1. User is authenticated with a valid role (admin, read, write, readWrite)
+                // 2. OR read-only access is allowed for this request
+                // 3. OR user object exists and isAuthenticated check passed
+                const hasAccess = (isAuthenticated && hasValidRole) ||
+                    allowReadOnly ||
+                    (req.user && isAuthenticated);
+
+                if (!hasAccess) {
+                    return res.status(401).json({
+                        error: 'You do not have permission to view this resource',
+                        login: '/admin/#/login'
+                    });
+                }
+            }
+            // If no security strategy is configured, allow all requests
+            next();
+        });
+
         // Delegate anchor API endpoints to AnchorPlugin
         if (brain && brain.anchorPlugin) {
             brain.anchorPlugin.registerWithRouter(router);
@@ -323,7 +359,7 @@ module.exports = function(app) {
 
             const { type } = req.body;
 
-            const validTypes = ['weather', 'sail', 'alerts', 'ais', 'status', 'logbook', 'route'];
+            const validTypes = ['weather', 'sail', 'alerts', 'ais', 'status', 'logbook', 'route', 'racing', 'briefing'];
             if (!type) {
                 return res.status(400).json({ error: 'Analysis type is required' });
             }
@@ -380,6 +416,36 @@ module.exports = function(app) {
             }
         });
         
+        // Do-not-disturb — silence voice and pause scheduled analyses
+        router.get('/dnd', (req, res) => {
+            if (!brain) {
+                return res.status(503).json({ error: 'Service not initialized' });
+            }
+            res.json(brain.getDndStatus());
+        });
+
+        router.post('/dnd', (req, res) => {
+            if (!brain) {
+                return res.status(503).json({ error: 'Service not initialized' });
+            }
+
+            const { mode, durationMinutes } = req.body;
+            const validModes = ['off', 'safety', 'all'];
+            if (!mode || typeof mode !== 'string' || !validModes.includes(mode)) {
+                return res.status(400).json({ error: 'Invalid mode', validModes });
+            }
+            if (durationMinutes !== undefined &&
+                (typeof durationMinutes !== 'number' || durationMinutes < 0 || durationMinutes > 1440)) {
+                return res.status(400).json({ error: 'durationMinutes must be a number between 0 and 1440' });
+            }
+
+            try {
+                res.json({ success: true, ...brain.setDnd(mode, durationMinutes) });
+            } catch (error) {
+                res.status(400).json({ error: error.message });
+            }
+        });
+
         // TTS — rate-limited separately
         router.post('/speak', rateLimit(speakLimiter), (req, res) => {
             if (!components.voice) {

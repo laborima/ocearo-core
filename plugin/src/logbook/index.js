@@ -1,43 +1,11 @@
 /**
  * Logbook Module - AI Analysis Integration
  *
- * Strategy (in priority order):
- *  1. If @meri-imperiumi/signalk-logbook plugin is detected → proxy all read/write
- *     operations to it (existing behaviour).
- *  2. If not detected → register as a Signal K Resource Provider for the custom
- *     'logbooks' resource type and store entries locally via LogbookStore.
- *
- * Fuel log entries are always stored locally via LogbookStore regardless of
- * which logbook backend is active, because the signalk-logbook plugin has no
- * fuel-log concept.
+ * Strategy: always use the local LogbookStore and expose it as a Signal K
+ * Resource Provider for the custom 'logbooks' resource type.
  */
 
 const LogbookStore = require('./logbook-store');
-
-// Using native fetch API
-const https = require('https');
-
-// Setup agents for both node-fetch (Agent) and native fetch (Dispatcher)
-// to handle self-signed certificates
-let httpsAgent;
-let undiciDispatcher;
-
-try {
-    // Try to load undici for native fetch support (Node 18+)
-    const { Agent } = require('undici');
-    undiciDispatcher = new Agent({
-        connect: {
-            rejectUnauthorized: false
-        }
-    });
-} catch (e) {
-    // undici not available, ignore
-}
-
-// Create standard https agent as fallback/for node-fetch
-httpsAgent = new https.Agent({
-  rejectUnauthorized: false
-});
 
 class LogbookManager {
     constructor(app, config = {}) {
@@ -69,16 +37,9 @@ class LogbookManager {
             error: this.app.error
         };
         
-        // SignalK-Logbook API settings with proper defaults
         const logbookConfig = this.config.logbook || {};
-        this.signalkLogbook = {
-            enabled: logbookConfig.enabled !== undefined ? logbookConfig.enabled : true,
-            serverUrl: logbookConfig.serverUrl || '',
-            apiPath: logbookConfig.apiPath || '/plugins/signalk-logbook/logs',
-            author: logbookConfig.author || 'ocearo-core',
-            timeout: logbookConfig.timeout || 5000
-        };
-        
+        this.logbookAuthor = logbookConfig.author || 'ocearo-core';
+
         // Analysis logging settings with proper defaults
         this.analysisLogging = {
             enabled: this.config.logbook?.logAnalysis !== false,
@@ -86,11 +47,11 @@ class LogbookManager {
             logRecommendations: this.config.logbook?.logRecommendations !== false
         };
         
-        // State
-        this.isConnected = false;
-
-        /** 'signalk-logbook' | 'local' — determined at start() */
+        /** Backend is always local */
         this.backend = 'local';
+
+        /** Connection flag kept for API compatibility (always true for local backend) */
+        this.isConnected = true;
 
         /** Local store — always initialised, used for fuel log and local backend */
         this.store = new LogbookStore(this.app);
@@ -102,27 +63,8 @@ class LogbookManager {
     }
 
     /**
-     * Internal fetch wrapper to handle HTTPS agent and common options
-     */
-    async _fetch(url, options = {}) {
-        const isHttps = url.startsWith('https');
-        const fetchOptions = { ...options };
-        
-        if (isHttps) {
-            if (undiciDispatcher) {
-                fetchOptions.dispatcher = undiciDispatcher;
-            } else {
-                fetchOptions.agent = httpsAgent;
-            }
-        }
-        
-        return fetch(url, fetchOptions);
-    }
-
-    /**
      * Initialize logbook integration.
-     * Detects whether the signalk-logbook plugin is available; if not, falls
-     * back to local storage and registers as a SK Resource Provider.
+     * Always uses the local storage and registers as a SK Resource Provider.
      */
     async start() {
         try {
@@ -130,51 +72,14 @@ class LogbookManager {
 
             // Always initialise local store (needed for fuel log)
             this.store.init();
-
-            if (!this.signalkLogbook.enabled) {
-                warn('SignalK-Logbook integration disabled — using local store');
-                this._registerAsResourceProvider();
-                this.backend = 'local';
-                this.isConnected = true;
-                return {
-                    status: 'local',
-                    success: true,
-                    message: 'Using local logbook store (signalk-logbook disabled)',
-                    connected: true,
-                    backend: 'local'
-                };
-            }
-
-            debug('Testing SignalK-Logbook plugin availability...');
-            this.isConnected = await this.testSignalkConnection();
-
-            if (!this.isConnected) {
-                warn('SignalK-Logbook plugin not found — registering as Resource Provider with local store');
-                this._registerAsResourceProvider();
-                this.backend = 'local';
-                this.isConnected = true;
-                return {
-                    status: 'local',
-                    success: true,
-                    message: 'Using local logbook store (signalk-logbook not available)',
-                    connected: true,
-                    backend: 'local'
-                };
-            }
-
-            this.backend = 'signalk-logbook';
-            info('Using signalk-logbook plugin as logbook backend');
+            this._registerAsResourceProvider();
+            this.backend = 'local';
             return {
-                status: 'ready',
+                status: 'local',
                 success: true,
+                message: 'Using local logbook store',
                 connected: true,
-                message: 'Logbook manager started — using signalk-logbook backend',
-                backend: 'signalk-logbook',
-                config: {
-                    serverUrl: this.signalkLogbook.serverUrl,
-                    apiPath: this.signalkLogbook.apiPath,
-                    timeout: this.signalkLogbook.timeout
-                }
+                backend: 'local'
             };
 
         } catch (error) {
@@ -189,151 +94,9 @@ class LogbookManager {
         }
     }
 
-    /**
-     * Test SignalK server connection and logbook API availability
-     */
-    async testSignalkConnection() {
-        const startTime = Date.now();
-        
-        try {
-            // Validate server URL - if empty, try to get from app
-            if (!this.signalkLogbook.serverUrl) {
-                this.signalkLogbook.serverUrl = this._detectServerUrl();
-            }
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.signalkLogbook.timeout);
-            
-            // First test basic server connectivity
-            const testUrl = `${this.signalkLogbook.serverUrl.replace(/\/$/, '')}/signalk/v1/api/self`;
-            this.app.debug(`Testing connection to: ${testUrl}`);
-            
-            const response = await this._fetch(testUrl, {
-                signal: controller.signal,
-                headers: {
-                    'Accept': 'application/json',
-                    'Cache-Control': 'no-cache'
-                }
-            }).catch(err => {
-                if (err.name === 'AbortError') {
-                    throw new Error(`Connection timeout after ${this.signalkLogbook.timeout}ms`);
-                }
-                throw err;
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            // Test if logbook API is available - try multiple common paths
-            const possiblePaths = [
-                '/plugins/signalk-logbook/logs',
-                '/plugins/@meri-imperiumi/signalk-logbook/logs',
-                this.signalkLogbook.apiPath,
-                '/signalk/v1/api/logbook'
-            ];
-            
-            // Try to discover logbook path from API root
-            try {
-                const apiRootResponse = await this._fetch(`${this.signalkLogbook.serverUrl}/signalk/v1/api/`, {
-                    signal: controller.signal,
-                    headers: { 'Accept': 'application/json' }
-                });
-                if (apiRootResponse.ok) {
-                    const apiRoot = await apiRootResponse.json();
-                    // Check standard resource paths
-                    if (apiRoot.vessels?.self?.logbook) possiblePaths.push('/signalk/v1/api/vessels/self/logbook');
-                    if (apiRoot.resources?.logbook) possiblePaths.push('/signalk/v1/api/resources/logbook');
-                }
-            } catch (e) {
-                // Ignore discovery errors
-            }
-            
-            let logbookFound = false;
-            let workingPath = null;
-            
-            // Remove duplicates
-            const uniquePaths = [...new Set(possiblePaths)];
-            
-            for (const testPath of uniquePaths) {
-                try {
-                    const controller2 = new AbortController();
-                    const timeoutId2 = setTimeout(() => controller2.abort(), this.signalkLogbook.timeout);
-                    
-                    const logbookUrl = `${this.signalkLogbook.serverUrl}${testPath}`;
-                    this.app.debug(`Testing logbook API at: ${logbookUrl}`);
-                    
-                    const logbookResponse = await this._fetch(logbookUrl, {
-                        signal: controller2.signal,
-                        headers: {
-                            'Accept': 'application/json'
-                        }
-                    }).catch(err => {
-                        clearTimeout(timeoutId2);
-                        if (err.name === 'AbortError') {
-                            throw new Error('Logbook API timeout');
-                        }
-                        throw err;
-                    });
-                    
-                    clearTimeout(timeoutId2);
-                    
-                    // Consider 200 (GET success) or 405 (method not allowed, but endpoint exists) as success
-                    if (logbookResponse.status === 200 || logbookResponse.status === 405 || logbookResponse.status === 401) {
-                        logbookFound = true;
-                        workingPath = testPath;
-                        this.signalkLogbook.apiPath = testPath; // Update to working path
-                        this.app.info(`Found SignalK-Logbook API at: ${testPath}`);
-                        break;
-                    }
-                } catch (err) {
-                    this.app.debug(`Logbook API not found at ${testPath}: ${err.message}`);
-                }
-            }
-            
-            if (!logbookFound) {
-                this.app.warn('SignalK-Logbook API not found at any common path - plugin may not be installed or enabled');
-                this.app.warn('Tried paths: ' + possiblePaths.join(', '));
-                return false;
-            }
-            
-            const responseTime = Date.now() - startTime;
-            this.app.info(`SignalK server and logbook API connection successful at ${workingPath} (${responseTime}ms)`);
-            return true;
-            
-        } catch (error) {
-            const errorMsg = `SignalK server connection failed: ${error.message}`;
-            this.app.warn(errorMsg);
-            if (error.response) {
-                this.app.debug(`Response status: ${error.response.status} ${error.response.statusText}`);
-            }
-            return false;
-        }
-    }
-
-    /**
-     * Detect the SignalK server URL from app configuration.
-     * @returns {string} The detected server URL
-     */
-    _detectServerUrl() {
-        if (this.app.config?.settings?.ssl) {
-            const port = this.app.config.settings.sslport || this.app.config.settings.sslPort || 3443;
-            return `https://127.0.0.1:${port}`;
-        }
-        if (this.app.config?.settings?.port) {
-            return `http://127.0.0.1:${this.app.config.settings.port}`;
-        }
-        if (process.env.SIGNALK_SERVER_URL) {
-            return process.env.SIGNALK_SERVER_URL;
-        }
-        return 'http://127.0.0.1:3000';
-    }
 
     /**
      * Register ocearo-core as a Signal K Resource Provider for 'logbooks'.
-     * Only called when the signalk-logbook plugin is absent.
      * @private
      */
     _registerAsResourceProvider() {
@@ -399,33 +162,14 @@ class LogbookManager {
 
         try {
             const entry = await this.buildAnalysisEntry(analysisType, result);
-
-            if (this.backend === 'local') {
-                await this.store.addEntry({
-                    ...entry,
-                    entryType: analysisType,
-                    systemEvent: result.systemEvent || false
-                });
-                this.app.debug(`Analysis logged to local store: ${analysisType}`);
-                return;
-            }
-
-            // signalk-logbook backend
-            if (!this.isConnected) {
-                this.isConnected = await this.testSignalkConnection();
-                if (!this.isConnected) {
-                    this.app.warn('Cannot log analysis - SignalK server not available');
-                    return;
-                }
-            }
-
-            await this.sendToSignalkApi(entry);
-            this.app.debug(`Analysis logged to signalk-logbook: ${analysisType}`);
+            await this.store.addEntry({
+                ...entry,
+                entryType: analysisType,
+                systemEvent: result.systemEvent || false
+            });
+            this.app.debug(`Analysis logged to local store: ${analysisType}`);
         } catch (error) {
             this.app.error('Failed to log analysis:', error);
-            if (this.backend !== 'local') {
-                this.isConnected = false;
-            }
         }
     }
 
@@ -437,7 +181,7 @@ class LogbookManager {
         const entry = {
             datetime: new Date().toISOString(),
             category: 'navigation',
-            author: this.signalkLogbook.author,
+            author: this.logbookAuthor,
             text: this.formatAnalysisText(analysisType, result)
         };
 
@@ -645,63 +389,6 @@ class LogbookManager {
     }
 
     /**
-     * Send entry to SignalK-Logbook API
-     */
-    async sendToSignalkApi(entry) {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.signalkLogbook.timeout);
-
-            const body = {
-                text: entry.text,
-                category: entry.category || 'navigation'
-            };
-
-            const response = await this._fetch(`${this.signalkLogbook.serverUrl}${this.signalkLogbook.apiPath}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(body),
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) {
-                if (response.status === 404) {
-                    this.app.warn('SignalK-Logbook API not available (404) - logbook plugin may not be installed');
-                    this.isConnected = false;
-                    return;
-                }
-                if (response.status === 401 || response.status === 403) {
-                    this.app.warn('SignalK-Logbook API requires authentication - disabling logbook writes');
-                    this.signalkLogbook.enabled = false;
-                    this.isConnected = false;
-                    return;
-                }
-                if (response.status >= 500) {
-                    this.app.warn(`SignalK-Logbook API server error (${response.status}) - disabling logbook writes`);
-                    this.signalkLogbook.enabled = false;
-                    this.isConnected = false;
-                    return;
-                }
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            this.app.debug('Analysis entry sent to SignalK-Logbook API successfully');
-        } catch (error) {
-            if (error.message.includes('404')) {
-                this.app.warn('SignalK-Logbook API not available - analysis logging disabled');
-                this.isConnected = false;
-                return;
-            }
-            this.app.error('Failed to send analysis entry to SignalK-Logbook API:', error.message);
-            throw error;
-        }
-    }
-
-    /**
      * Log multiple analysis results (batch)
      */
     async logMultipleAnalyses(analyses) {
@@ -728,71 +415,32 @@ class LogbookManager {
     async logAnalysisWithCategory(analysisType, result, category = 'navigation') {
         if (!this.analysisLogging.enabled) return;
 
-        // Ensure connection
-        if (!this.isConnected) {
-            this.isConnected = await this.testSignalkConnection();
-            if (!this.isConnected) return;
-        }
-
         try {
             const entry = await this.buildAnalysisEntry(analysisType, result);
             entry.category = category;
             
-            await this.sendToSignalkApi(entry);
+            await this.store.addEntry({
+                ...entry,
+                entryType: analysisType,
+                systemEvent: result.systemEvent || false
+            });
             this.app.debug(`Analysis logged with category ${category}: ${analysisType}`);
         } catch (error) {
             this.app.error('Failed to log analysis with custom category:', error);
-            this.isConnected = false;
         }
     }
 
     /**
-     * Get SignalK-Logbook server status
+     * Get logbook status
      */
     async getServerStatus() {
-        try {
-            const connected = await this.testSignalkConnection();
-            
-            let serverInfo = {};
-            if (connected) {
-                try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), this.signalkLogbook.timeout);
-                    
-                    const response = await this._fetch(`${this.signalkLogbook.serverUrl}/signalk/v1/api/self`, {
-                        signal: controller.signal
-                    });
-                    
-                    clearTimeout(timeoutId);
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        serverInfo = {
-                            name: data.name,
-                            uuid: data.uuid
-                        };
-                    }
-                } catch (error) {
-                    // Server info not available
-                }
-            }
-
-            return {
-                enabled: this.signalkLogbook.enabled,
-                connected,
-                serverUrl: this.signalkLogbook.serverUrl,
-                serverInfo,
-                analysisLogging: this.analysisLogging
-            };
-
-        } catch (error) {
-            return {
-                enabled: this.signalkLogbook.enabled,
-                connected: false,
-                error: error.message,
-                analysisLogging: this.analysisLogging
-            };
-        }
+        return {
+            enabled: true,
+            connected: true,
+            serverUrl: 'local',
+            serverInfo: {},
+            analysisLogging: this.analysisLogging
+        };
     }
 
     /**
@@ -821,10 +469,6 @@ class LogbookManager {
      * Update configuration
      */
     updateConfig(config) {
-        if (config.signalkLogbook) {
-            Object.assign(this.signalkLogbook, config.signalkLogbook);
-        }
-        
         if (config.analysisLogging) {
             Object.assign(this.analysisLogging, config.analysisLogging);
         }
@@ -837,9 +481,9 @@ class LogbookManager {
      */
     getConfig() {
         return {
-            signalkLogbook: { ...this.signalkLogbook },
             analysisLogging: { ...this.analysisLogging },
-            isConnected: this.isConnected
+            isConnected: true,
+            backend: this.backend
         };
     }
 
@@ -885,88 +529,7 @@ class LogbookManager {
      * SignalK-Logbook API structure: GET /logs returns dates, GET /logs/{date} returns entries for that date
      */
     async getAllLogbookEntries(startDate, endDate) {
-        if (this.backend === 'local') {
-            return this.store.getAllEntries({ startDate, endDate });
-        }
-        // Attempt to connect if not already connected
-        if (!this.isConnected) {
-            this.app.debug('Not connected to SignalK-Logbook, attempting to connect...');
-            this.isConnected = await this.testSignalkConnection();
-            if (!this.isConnected) {
-                this.app.warn('Cannot fetch logbook entries - SignalK-Logbook server not available');
-                return []; // Return empty array instead of throwing
-            }
-        }
-
-        try {
-            // First, get list of dates with log entries
-            const controller1 = new AbortController();
-            const timeoutId1 = setTimeout(() => controller1.abort(), this.signalkLogbook.timeout);
-            
-            const datesUrl = `${this.signalkLogbook.serverUrl}${this.signalkLogbook.apiPath}`;
-            const datesResponse = await this._fetch(datesUrl, {
-                signal: controller1.signal,
-                headers: {
-                    'Accept': 'application/json',
-                    'Cache-Control': 'no-cache'
-                }
-            });
-            
-            clearTimeout(timeoutId1);
-            
-            if (!datesResponse.ok) {
-                throw new Error(`HTTP ${datesResponse.status}: ${datesResponse.statusText}`);
-            }
-            
-            const dates = await datesResponse.json();
-            
-            // Filter dates based on startDate/endDate if provided
-            let filteredDates = dates;
-            if (startDate || endDate) {
-                filteredDates = dates.filter(date => {
-                    if (startDate && date < startDate) return false;
-                    if (endDate && date > endDate) return false;
-                    return true;
-                });
-            }
-
-            // Fetch entries for each date
-            const allEntries = [];
-            for (const date of filteredDates) {
-                const controller2 = new AbortController();
-                const timeoutId2 = setTimeout(() => controller2.abort(), this.signalkLogbook.timeout);
-                
-                const entriesUrl = `${this.signalkLogbook.serverUrl}${this.signalkLogbook.apiPath}/${date}`;
-                const entriesResponse = await this._fetch(entriesUrl, {
-                    signal: controller2.signal,
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                clearTimeout(timeoutId2);
-                
-                if (entriesResponse.ok) {
-                    const entries = await entriesResponse.json();
-                    allEntries.push(...entries);
-                }
-            }
-            
-            // Transform entries to match expected format
-            return allEntries.map(entry => ({
-                ...entry,
-                date: new Date(entry.datetime),
-                point: entry.position ? {
-                    latitude: entry.position.latitude,
-                    longitude: entry.position.longitude,
-                    toString: () => `${entry.position.latitude.toFixed(6)}, ${entry.position.longitude.toFixed(6)}`
-                } : null
-            }));
-        } catch (error) {
-            this.app.error('Failed to fetch all logbook entries from SignalK API:', error);
-            this.isConnected = false; // Mark as disconnected on error
-            return []; // Return empty array as fallback
-        }
+        return this.store.getAllEntries({ startDate, endDate });
     }
 
     /**
@@ -974,83 +537,17 @@ class LogbookManager {
      * Accepts entry in ocearo format and converts to SignalK-Logbook format
      */
     async addLogbookEntry(entry) {
-        if (this.backend === 'local') {
-            try {
-                const id = await this.store.addEntry({
-                    ...entry,
-                    datetime: entry.datetime || new Date().toISOString(),
-                    category: entry.category || 'navigation',
-                    text: entry.text || entry.remarks || 'Manual entry'
-                });
-                this._emitResourceDelta(id, await this.store.getResource(id));
-                return { success: true, id };
-            } catch (err) {
-                return { success: false, error: err.message };
-            }
-        }
-
-        // Attempt to connect if not already connected
-        if (!this.isConnected) {
-            this.app.debug('Not connected to SignalK-Logbook, attempting to connect...');
-            this.isConnected = await this.testSignalkConnection();
-            if (!this.isConnected) {
-                this.app.warn('Cannot add logbook entry - SignalK-Logbook server not available');
-                return { success: false, error: 'Logbook server not available' };
-            }
-        }
-
         try {
-            // Convert ocearo entry format to SignalK-Logbook format
-            const logbookEntry = {
-                text: entry.text || entry.remarks || 'Manual entry',
-                ago: entry.ago || 0, // Minutes ago (0-15)
+            const id = await this.store.addEntry({
+                ...entry,
+                datetime: entry.datetime || new Date().toISOString(),
                 category: entry.category || 'navigation',
-            };
-
-            // Add optional observations if present
-            if (entry.observations) {
-                logbookEntry.observations = entry.observations;
-            }
-
-            // Add optional position if present
-            if (entry.position) {
-                logbookEntry.position = {
-                    latitude: entry.position.latitude,
-                    longitude: entry.position.longitude
-                };
-            }
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.signalkLogbook.timeout);
-            
-            const response = await this._fetch(`${this.signalkLogbook.serverUrl}${this.signalkLogbook.apiPath}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(logbookEntry),
-                signal: controller.signal
+                text: entry.text || entry.remarks || 'Manual entry'
             });
-            
-            clearTimeout(timeoutId);
-            
-            if (response.status === 404) {
-                this.app.warn('SignalK-Logbook API not available (404) - falling back to local store');
-                this.isConnected = false;
-                return this._addEntryToLocalStore(entry);
-            }
-
-            if (!response.ok) {
-                const errorText = await response.text().catch(() => response.statusText);
-                this.app.warn(`SignalK-Logbook write failed (${response.status}) - falling back to local store: ${errorText}`);
-                return this._addEntryToLocalStore(entry);
-            }
-            
-            // SignalK-Logbook returns 201 Created with no body
-            return { success: true, data: { message: 'Entry created successfully' } };
-        } catch (error) {
-            this.app.warn('Failed to add logbook entry to SignalK API, falling back to local store:', error.message);
-            return this._addEntryToLocalStore(entry);
+            this._emitResourceDelta(id, await this.store.getResource(id));
+            return { success: true, id };
+        } catch (err) {
+            return { success: false, error: err.message };
         }
     }
 
@@ -1080,50 +577,11 @@ class LogbookManager {
      * Routes to local store or signalk-logbook depending on active backend.
      */
     async getAnalysisEntries(startDate, endDate) {
-        if (this.backend === 'local') {
-            try {
-                const all = await this.store.getAllEntries({ startDate, endDate });
-                return all.filter(entry => entry.analysis || entry.entryType);
-            } catch (err) {
-                this.app.error('Failed to fetch analysis entries from local store:', err.message);
-                return [];
-            }
-        }
-
-        // signalk-logbook backend
-        if (!this.isConnected) {
-            this.app.debug('Not connected to SignalK-Logbook, attempting to connect...');
-            this.isConnected = await this.testSignalkConnection();
-            if (!this.isConnected) {
-                this.app.warn('Cannot fetch analysis entries - SignalK-Logbook not available');
-                return [];
-            }
-        }
-
         try {
-            const params = new URLSearchParams();
-            if (startDate) params.append('startDate', startDate);
-            if (endDate) params.append('endDate', endDate);
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.signalkLogbook.timeout);
-            
-            const response = await this._fetch(
-                `${this.signalkLogbook.serverUrl}${this.signalkLogbook.apiPath}?${params}`,
-                { signal: controller.signal }
-            );
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            return data.filter(entry => 
-                entry.author === this.signalkLogbook.author && entry.analysis
-            );
-        } catch (error) {
-            this.app.error('Failed to fetch analysis entries from SignalK API:', error);
+            const all = await this.store.getAllEntries({ startDate, endDate });
+            return all.filter(entry => entry.analysis || entry.entryType);
+        } catch (err) {
+            this.app.error('Failed to fetch analysis entries from local store:', err.message);
             return [];
         }
     }
