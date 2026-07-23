@@ -45,8 +45,10 @@ const textUtils = {
           // Milles nautiques : "nm"/"NM" (insensible à la casse) et "MN"/"M" (majuscule, le "mn" minuscule = minutes)
           .replace(/(\d+)[.,](\d+)\s*nm\b/gi, (_, a, b) => `${a} virgule ${b} milles nautiques`)
           .replace(/(\d+)\s*nm\b/gi, (_, a) => `${a} milles nautiques`)
-          .replace(/(\d+)[.,](\d+)\s*M[Nm]?\b/g, (_, a, b) => `${a} virgule ${b} milles nautiques`)
-          .replace(/(\d+)\s*M[Nm]?\b/g, (_, a) => `${a} milles nautiques`)
+          // NB: \b ne voit pas les accents comme des lettres ("5 Mètres" matcherait "5 M") —
+          // le lookahead (?![À-ÿ]) est requis sur toutes les unités d'une lettre.
+          .replace(/(\d+)[.,](\d+)\s*M[Nm]?\b(?![À-ÿ])/g, (_, a, b) => `${a} virgule ${b} milles nautiques`)
+          .replace(/(\d+)\s*M[Nm]?\b(?![À-ÿ])/g, (_, a) => `${a} milles nautiques`)
           // Vitesse : nœuds sous toutes les graphies/abréviations (kt, kts, kn, nds, knots, nœuds)
           .replace(/(\d+)[.,](\d+)\s*(?:kts?|kn|nds?|knots?|n(?:œ|oe)uds?)\b/gi, (_, a, b) => `${a} virgule ${b} nœuds`)
           .replace(/(\d+)\s*(?:kts?|kn|nds?|knots?|n(?:œ|oe)uds?)\b/gi, (_, a) => `${a} nœuds`)
@@ -58,14 +60,14 @@ const textUtils = {
           .replace(/(\d+)\s*°\s*c\b/gi, (_, a) => `${a} degrés Celsius`)
           .replace(/(\d+)\s*°\s*f\b/gi, (_, a) => `${a} degrés Fahrenheit`)
           // Distance/longueur en mètres (lookahead pour ne pas manger min, mph, mètres…)
-          .replace(/(\d+)[.,](\d+)\s*m\b(?![a-zè²°])/gi, (_, a, b) => `${a} virgule ${b} mètres`)
-          .replace(/(\d+)\s*m\b(?![a-zè²°])/gi, (_, a) => `${a} mètres`)
+          .replace(/(\d+)[.,](\d+)\s*m\b(?![a-zà-ÿ²°])/gi, (_, a, b) => `${a} virgule ${b} mètres`)
+          .replace(/(\d+)\s*m\b(?![a-zà-ÿ²°])/gi, (_, a) => `${a} mètres`)
           // Pourcentage, électricité, volumes
           .replace(/(\d+)[.,](\d+)\s*%/g, (_, a, b) => `${a} virgule ${b} pour cent`)
           .replace(/(\d+)\s*%/g, (_, a) => `${a} pour cent`)
-          .replace(/(\d+)\s*V\b/g, (_, a) => `${a} volts`)
-          .replace(/(\d+)[.,](\d+)\s*L\b/g, (_, a, b) => `${a} virgule ${b} litres`)
-          .replace(/(\d+)\s*L\b/g, (_, a) => `${a} litres`)
+          .replace(/(\d+)\s*V\b(?![À-ÿ])/g, (_, a) => `${a} volts`)
+          .replace(/(\d+)[.,](\d+)\s*L\b(?![À-ÿ])/g, (_, a, b) => `${a} virgule ${b} litres`)
+          .replace(/(\d+)\s*L\b(?![À-ÿ])/g, (_, a) => `${a} litres`)
           // Cap en degrés (après la température)
           .replace(/°/g, ' degrés')
           // Décimales restantes
@@ -77,8 +79,8 @@ const textUtils = {
           .replace(/\b[WO]N[WO]\b/g, 'Ouest-Nord-Ouest').replace(/\b[WO]S[WO]\b/g, 'Ouest-Sud-Ouest')
           .replace(/\bNE\b/g, 'Nord-Est').replace(/\bN[WO]\b/g, 'Nord-Ouest')
           .replace(/\bSE\b/g, 'Sud-Est').replace(/\bS[WO]\b/g, 'Sud-Ouest')
-          .replace(/\bN\b/g, 'Nord').replace(/\bS\b/g, 'Sud')
-          .replace(/\bE\b/g, 'Est').replace(/\b[WO]\b/g, 'Ouest')
+          .replace(/\bN\b(?![À-ÿ])/g, 'Nord').replace(/\bS\b(?![À-ÿ])/g, 'Sud')
+          .replace(/\bE\b(?![À-ÿ])/g, 'Est').replace(/\b[WO]\b(?![À-ÿ])/g, 'Ouest')
           // Supprime les répétitions accidentelles ("mètres mètres")
           .replace(/\b(mètres|nœuds|degrés|milles nautiques)(?:\s+\1\b)+/gi, '$1');
       } else {
