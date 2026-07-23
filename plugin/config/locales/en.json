@@ -1,6 +1,9 @@
 {
-  "meta": { "code": "en", "name": "English", "dateLocale": "en-US" },
-
+  "meta": {
+    "code": "en",
+    "name": "English",
+    "dateLocale": "en-US"
+  },
   "general": {
     "welcome": "Welcome aboard",
     "system_ready": "Ocearo system ready",
@@ -10,7 +13,6 @@
     "no_data": "Data not available",
     "startup_complete": "Startup analysis complete"
   },
-
   "startup": {
     "jarvis": "Systems online. How may I assist you, Captain?",
     "friend": "Hey there! All systems are ready to go.",
@@ -18,7 +20,6 @@
     "sea_dog": "Ahoy! Everything's shipshape, ready to cast off.",
     "default": "Ocearo initialized. Systems operational."
   },
-
   "shutdown": {
     "jarvis": "Systems going offline. Safe travels, Captain.",
     "friend": "Powering down. See you soon!",
@@ -26,7 +27,6 @@
     "sea_dog": "Heading back to port. Fair winds, mate.",
     "default": "Ocearo shutting down. Safe travels."
   },
-
   "mode": {
     "sailing": "Sailing",
     "anchored": "Anchored",
@@ -35,7 +35,6 @@
     "racing": "Racing",
     "changed": "Operating mode changed to: {mode}"
   },
-
   "status": {
     "system": "System status",
     "active": "Active",
@@ -49,11 +48,9 @@
     "ais_summary": "AIS: {total} targets, {danger} danger",
     "no_ais": "No AIS targets in range"
   },
-
   "weather": {
     "unavailable": "Weather data is currently unavailable",
     "current": "Current conditions: wind {windSpeed} knots from {windDir}, waves {waveHeight} m",
-
     "beaufort": {
       "0": "Calm",
       "1": "Light air",
@@ -69,7 +66,6 @@
       "11": "Violent storm",
       "12": "Hurricane"
     },
-
     "strength": {
       "light": "Light",
       "moderate": "Moderate",
@@ -78,7 +74,6 @@
       "near_gale": "Near gale",
       "gale": "Gale"
     },
-
     "sea_state": {
       "glassy": "Glassy",
       "calm": "Calm",
@@ -89,14 +84,12 @@
       "very_rough": "Very rough",
       "high": "High"
     },
-
     "trend": {
       "improving": "Improving",
       "stable": "Stable",
       "deteriorating": "Deteriorating",
       "unknown": "Unknown"
     },
-
     "pressure": {
       "steady": "Steady",
       "rising": "Rising",
@@ -104,7 +97,6 @@
       "falling": "Falling",
       "falling_fast": "Falling fast — low pressure approaching"
     },
-
     "alerts": {
       "high_wind": "Warning: high wind speed {speed} knots",
       "strong_wind": "Caution: strong wind {speed} knots",
@@ -113,7 +105,6 @@
       "squall_risk": "High squall risk: gusts at {gustFactor}% of mean wind, pressure falling.",
       "wind_against_tide": "Wind against tide! Expect short, steep chop."
     },
-
     "advice": {
       "light_general": "Light air. Maximize sail area, keep crew weight forward.",
       "moderate_upwind": "Moderate wind upwind. Good sail trim, watch your telltales.",
@@ -126,7 +117,6 @@
       "squall_preparation": "Squall approaching. Take a precautionary reef. Hand ready to ease sheets."
     }
   },
-
   "sail": {
     "point_of_sail": {
       "in_irons": "In irons",
@@ -137,7 +127,6 @@
       "running": "Running",
       "dead_run": "Dead run"
     },
-
     "trim_labels": {
       "mainsheet": "Mainsheet",
       "traveler": "Traveler",
@@ -149,7 +138,6 @@
       "preventer": "Preventer",
       "spinnaker": "Spinnaker"
     },
-
     "trim_values": {
       "released": "Released",
       "tight": "Sheeted in",
@@ -197,7 +185,6 @@
       "consider_light": "Consider in light air",
       "recommended_symmetric": "Recommended (symmetric)"
     },
-
     "selection": {
       "genoa": "Genoa",
       "genoa_full": "Full genoa (145%)",
@@ -214,7 +201,6 @@
       "spinnaker": "Asymmetric spinnaker",
       "spinnaker_light": "Light air spinnaker"
     },
-
     "advice": {
       "reef_needed": "Reefing recommended",
       "reduce_heel": "Reduce heel angle",
@@ -233,7 +219,6 @@
       "keel_lower_heavy_weather": "Heavy weather: keel DOWN is MANDATORY for stability."
     }
   },
-
   "course": {
     "maintain": "Current course is optimal, maintain heading.",
     "alter": "Alter course to {heading}°.",
@@ -248,7 +233,6 @@
       "wind_shift": "Wind from {cardinal} at {speed} knots. Watch for lifts to tack on the favored shift."
     }
   },
-
   "ais": {
     "no_targets": "No AIS targets in range.",
     "summary": "{total} AIS targets, {danger} danger, {caution} caution.",
@@ -276,7 +260,6 @@
       }
     }
   },
-
   "alerts": {
     "generic": "Alert: {message}. Value: {value}",
     "depth": "Depth alert: {value} meters",
@@ -287,7 +270,6 @@
     "no_alerts": "No active alerts",
     "count": "{count} active alerts"
   },
-
   "tides": {
     "high": "High tide",
     "low": "Low tide",
@@ -296,7 +278,6 @@
     "unknown": "Unknown",
     "next": "Next {type} at {time}"
   },
-
   "logbook": {
     "no_entries": "No logbook entries found to analyze",
     "analysis_count": "Analyzed {count} logbook entries",
@@ -307,9 +288,9 @@
     "monitor_weather": "Monitor weather forecasts closely",
     "engine_maintenance": "Consider scheduling engine maintenance",
     "entry_frequency": "Consider making more frequent logbook entries",
-    "memory_note": "System note: {note}"
+    "memory_note": "System note: {note}",
+    "wind": "Wind"
   },
-
   "reports": {
     "weather": "Weather",
     "tides": "Tides",
@@ -324,7 +305,6 @@
     "batteries_attention": "{count} need attention",
     "batteries_good": "All levels good"
   },
-
   "units": {
     "knots": "knots",
     "knots_abbr": "kts",
