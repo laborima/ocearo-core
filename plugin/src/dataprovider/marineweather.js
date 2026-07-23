@@ -85,12 +85,31 @@ class MarineWeatherDataProvider {
      * @returns {Object} Sensor values in display units
      */
     _readSensorData() {
-        const windSpeed = this._getSelfPath('environment.wind.speedTrue');
-        const windDirection = this._getSelfPath('environment.wind.directionTrue');
+        let windSpeed = this._getSelfPath('environment.wind.speedTrue');
+        let windDirection = this._getSelfPath('environment.wind.directionTrue');
         const windGust = this._getSelfPath('environment.wind.gust');
         const temperature = this._getSelfPath('environment.outside.temperature');
         const pressure = this._getSelfPath('environment.outside.pressure');
         const humidity = this._getSelfPath('environment.outside.relativeHumidity');
+
+        // True wind is a derived value and is often absent — or stuck at 0 —
+        // when the boat is stopped. In that case the masthead's apparent wind
+        // IS the true wind (SOG≈0), so use the measured value instead of
+        // reporting "wind 0 knots".
+        const windSpeedApparent = this._getSelfPath('environment.wind.speedApparent');
+        const sog = this._getSelfPath('navigation.speedOverGround');
+        const stopped = sog === null || sog < 0.5;
+        if ((windSpeed === null || (windSpeed === 0 && windSpeedApparent > 0.5 && stopped)) &&
+            windSpeedApparent !== null) {
+            windSpeed = windSpeedApparent;
+            if (windDirection === null) {
+                const heading = this._getSelfPath('navigation.headingTrue');
+                const angleApparent = this._getSelfPath('environment.wind.angleApparent');
+                if (heading !== null && angleApparent !== null) {
+                    windDirection = ((heading + angleApparent) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+                }
+            }
+        }
 
         const hasSensors = windSpeed !== null || temperature !== null || pressure !== null;
 

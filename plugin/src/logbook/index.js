@@ -253,19 +253,29 @@ class LogbookManager {
 
         // Create readable text based on analysis type
         const typeLabels = {
-            'weather': 'Weather Analysis',
-            'navigation': 'Navigation Analysis', 
-            'performance': 'Performance Analysis',
-            'safety': 'Safety Analysis',
-            'route': 'Route Analysis',
-            'arrival': 'Arrival Analysis',
-            'fuel': 'Fuel Analysis',
-            'maintenance': 'Maintenance Analysis',
-            'anchor': 'Anchor Analysis',
-            'collision': 'Collision Analysis'
+            'weather': 'Weather',
+            'navigation': 'Navigation',
+            'performance': 'Performance',
+            'safety': 'Safety',
+            'route': 'Route',
+            'arrival': 'Arrival',
+            'fuel': 'Fuel',
+            'maintenance': 'Maintenance',
+            'anchor': 'Anchor',
+            'collision': 'Collision',
+            'startup_analysis': 'Briefing',
+            'startup': 'System start',
+            'shutdown': 'System stop',
+            'hourly_entry': 'Hourly log',
+            'mode_change': 'Mode',
+            'briefing': 'Briefing',
+            'logbook_review': 'Logbook review',
+            'racing': 'Racing',
+            'alert': 'Alert',
+            'brain_memory': 'Memory'
         };
 
-        const label = typeLabels[analysisType] || `${analysisType} Analysis`;
+        const label = typeLabels[analysisType] || analysisType;
         
         // Truncate summary if too long for logbook text
         const truncatedSummary = summary.length > 200 
@@ -289,9 +299,12 @@ class LogbookManager {
         try {
             const context = {};
 
-            // Position
-            const position = await this.app.getSelfPath('navigation.position');
-            if (position) {
+            // Position — getSelfPath may return the node ({value: {...}}) or the
+            // bare value depending on the SK server; handle both or the entry
+            // ends up with an empty {} position.
+            const positionNode = await this.app.getSelfPath('navigation.position');
+            const position = positionNode?.value ?? positionNode;
+            if (typeof position?.latitude === 'number' && typeof position?.longitude === 'number') {
                 context.position = {
                     longitude: position.longitude,
                     latitude: position.latitude
@@ -324,20 +337,64 @@ class LogbookManager {
                 context.heading = Math.round(heading.value * 180 / Math.PI);
             }
 
-            // Wind data
-            const [windSpeedTrue, windDirTrue] = await Promise.all([
+            // Wind data — prefer true wind, fall back to the measured apparent
+            // wind when true wind is absent or reads 0 while the masthead
+            // clearly measures wind (typical at the dock where SOG=0 and the
+            // derived true wind is not computed).
+            const [windSpeedTrue, windDirTrue, windSpeedApp, windAngleApp, headingForWind] = await Promise.all([
                 this.app.getSelfPath('environment.wind.speedTrue'),
-                this.app.getSelfPath('environment.wind.directionTrue')
+                this.app.getSelfPath('environment.wind.directionTrue'),
+                this.app.getSelfPath('environment.wind.speedApparent'),
+                this.app.getSelfPath('environment.wind.angleApparent'),
+                this.app.getSelfPath('navigation.headingTrue')
             ]);
 
-            if (windSpeedTrue?.value !== undefined || windDirTrue?.value !== undefined) {
+            const trueSpeed = windSpeedTrue?.value;
+            const appSpeed = windSpeedApp?.value;
+            const sogMs = sog?.value ?? 0;
+            const useApparent = (trueSpeed === undefined || trueSpeed === null ||
+                (trueSpeed === 0 && typeof appSpeed === 'number' && appSpeed > 0.5 && sogMs < 0.5)) &&
+                typeof appSpeed === 'number';
+
+            if (useApparent) {
+                context.wind = {
+                    speed: parseFloat((appSpeed * 1.94384).toFixed(1)), // m/s to knots
+                    apparent: true
+                };
+                // Compass direction from heading + apparent angle when possible
+                if (headingForWind?.value !== undefined && windAngleApp?.value !== undefined) {
+                    const dir = (headingForWind.value + windAngleApp.value) * 180 / Math.PI;
+                    context.wind.direction = Math.round(((dir % 360) + 360) % 360);
+                }
+            } else if (trueSpeed !== undefined || windDirTrue?.value !== undefined) {
                 context.wind = {};
-                if (windSpeedTrue?.value !== undefined) {
-                    context.wind.speed = parseFloat((windSpeedTrue.value * 1.94384).toFixed(1)); // m/s to knots
+                if (trueSpeed !== undefined) {
+                    context.wind.speed = parseFloat((trueSpeed * 1.94384).toFixed(1)); // m/s to knots
                 }
                 if (windDirTrue?.value !== undefined) {
                     context.wind.direction = Math.round(windDirTrue.value * 180 / Math.PI);
                 }
+            }
+
+            // Barometer, depth and trip log complete the classic logbook columns
+            const [pressure, depthBT, depthBK, tripLog, totalLog] = await Promise.all([
+                this.app.getSelfPath('environment.outside.pressure'),
+                this.app.getSelfPath('environment.depth.belowTransducer'),
+                this.app.getSelfPath('environment.depth.belowKeel'),
+                this.app.getSelfPath('navigation.trip.log'),
+                this.app.getSelfPath('navigation.log')
+            ]);
+
+            if (typeof pressure?.value === 'number') {
+                context.barometer = parseFloat((pressure.value / 100).toFixed(1)); // Pa to hPa
+            }
+            const depthValue = depthBK?.value ?? depthBT?.value;
+            if (typeof depthValue === 'number') {
+                context.depth = parseFloat(depthValue.toFixed(1));
+            }
+            const logMeters = tripLog?.value ?? totalLog?.value;
+            if (typeof logMeters === 'number') {
+                context.log = parseFloat((logMeters / 1852).toFixed(1)); // meters to NM
             }
 
             // Engine data — try multiple common SignalK paths
@@ -525,11 +582,38 @@ class LogbookManager {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
+     * Flatten the vesselContext of a stored entry into the classic
+     * signalk-logbook top-level fields (point, speed, course, wind, barometer,
+     * log, engine) that clients like ocearo-ui render. Older entries only
+     * carry the data inside vesselContext, which the UI shows as N/A.
+     * @private
+     */
+    _toClientEntry(entry) {
+        if (!entry || typeof entry !== 'object') return entry;
+        const ctx = entry.vesselContext || {};
+        const out = { ...entry };
+
+        if (!out.point && typeof ctx.position?.latitude === 'number') {
+            out.point = { latitude: ctx.position.latitude, longitude: ctx.position.longitude };
+        }
+        if (!out.speed && ctx.speed) out.speed = ctx.speed;
+        if ((out.course === undefined || out.course === null) && typeof ctx.course === 'number') out.course = ctx.course;
+        if ((out.heading === undefined || out.heading === null) && typeof ctx.heading === 'number') out.heading = ctx.heading;
+        if (!out.wind && ctx.wind) out.wind = ctx.wind;
+        if (out.barometer === undefined && typeof ctx.barometer === 'number') out.barometer = ctx.barometer;
+        if (out.log === undefined && typeof ctx.log === 'number') out.log = ctx.log;
+        if (!out.engine && ctx.engine) out.engine = ctx.engine;
+
+        return out;
+    }
+
+    /**
      * Get all logbook entries from the active backend.
      * SignalK-Logbook API structure: GET /logs returns dates, GET /logs/{date} returns entries for that date
      */
     async getAllLogbookEntries(startDate, endDate) {
-        return this.store.getAllEntries({ startDate, endDate });
+        const entries = await this.store.getAllEntries({ startDate, endDate });
+        return entries.map(e => this._toClientEntry(e));
     }
 
     /**
@@ -579,7 +663,9 @@ class LogbookManager {
     async getAnalysisEntries(startDate, endDate) {
         try {
             const all = await this.store.getAllEntries({ startDate, endDate });
-            return all.filter(entry => entry.analysis || entry.entryType);
+            return all
+                .filter(entry => entry.analysis || entry.entryType)
+                .map(e => this._toClientEntry(e));
         } catch (err) {
             this.app.error('Failed to fetch analysis entries from local store:', err.message);
             return [];

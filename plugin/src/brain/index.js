@@ -66,7 +66,14 @@ class OrchestratorBrain {
         
         // Timers
         this.timers = {};
-        
+
+        // Logbook noise control: last time each AIS target's collision alarm was
+        // logged (keyed by MMSI/name), and whether the last hourly entry was
+        // written while stationary (to avoid one entry per hour all night at the dock).
+        this._aisLogbookCooldown = new Map();
+        this._aisLogbookCooldownMs = 30 * 60 * 1000;
+        this._lastHourlyStationary = false;
+
         // State
         this.state = {
             mode: config.mode || 'sailing',
@@ -428,15 +435,28 @@ class OrchestratorBrain {
                 if (toSpeak) this.voice.speak(toSpeak, { priority: 'normal' });
             }
             
-            // Log startup analysis to logbook
-            await this.logAnalysisToLogbook('startup_analysis', {
-                summary: startupReport.summary,
-                confidence: startupReport.confidence,
-                analysisResults,
-                timestamp: new Date().toISOString(),
-                manual: false,
-                requestType: 'automatic_startup_analysis'
-            });
+            // Log startup analysis to logbook — but only once per 6 h window,
+            // so repeated SignalK restarts don't each add a briefing entry.
+            let recentStartupLogged = false;
+            try {
+                const since = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+                const recent = await this.logbookManager.store.listResources({ startDate: since });
+                recentStartupLogged = Object.values(recent)
+                    .some(meta => (meta.title || '').toLowerCase().startsWith('startup'));
+            } catch { /* index unavailable → log normally */ }
+
+            if (!recentStartupLogged) {
+                await this.logAnalysisToLogbook('startup_analysis', {
+                    summary: startupReport.summary,
+                    confidence: startupReport.confidence,
+                    analysisResults,
+                    timestamp: new Date().toISOString(),
+                    manual: false,
+                    requestType: 'automatic_startup_analysis'
+                });
+            } else {
+                this.app.debug('Startup analysis not logged (already logged in the last 6 h)');
+            }
             
             this.app.debug('Comprehensive startup analysis completed');
             
@@ -583,18 +603,25 @@ class OrchestratorBrain {
                     }
                 }
 
-                // Log collision risks to logbook
+                // Log collision risks to logbook — at most one entry per target
+                // per cooldown window. The AIS check runs every 15 s, so without
+                // this a persistent target floods the logbook with hundreds of
+                // near-identical entries.
                 for (const alert of result.alerts) {
-                    if (alert.severity === 'alarm') {
-                        await this.logAnalysisToLogbook('safety', {
-                            summary: alert.message,
-                            confidence: 0.95,
-                            aisTarget: alert.target,
-                            cpa: alert.cpa,
-                            tcpa: alert.tcpa,
-                            colregs: alert.colregs
-                        });
-                    }
+                    if (alert.severity !== 'alarm') continue;
+                    const key = alert.target?.mmsi || alert.target?.name || 'unknown';
+                    const lastLogged = this._aisLogbookCooldown.get(key) || 0;
+                    if (Date.now() - lastLogged < this._aisLogbookCooldownMs) continue;
+                    this._aisLogbookCooldown.set(key, Date.now());
+
+                    await this.logAnalysisToLogbook('safety', {
+                        summary: alert.message,
+                        confidence: 0.95,
+                        aisTarget: alert.target,
+                        cpa: alert.cpa,
+                        tcpa: alert.tcpa,
+                        colregs: alert.colregs
+                    });
                 }
 
                 // Store in memory
@@ -833,47 +860,63 @@ class OrchestratorBrain {
         
         try {
             const vesselData = await this.signalkProvider.getVesselData();
-            const language = this.config.language || 'en';
-            
+
             // Extract data for logbook entry
             const nav = vesselData.navigation || {};
             const env = vesselData.environment || {};
-            
+
             const position = nav.position;
-            const speed = nav.speedOverGround !== undefined 
-                ? (nav.speedOverGround * 1.94384).toFixed(1) 
-                : 'N/A';
-            const course = nav.courseOverGroundTrue !== undefined 
-                ? Math.round(nav.courseOverGroundTrue * 180 / Math.PI) 
-                : 'N/A';
-            const heading = nav.headingTrue !== undefined 
-                ? Math.round(nav.headingTrue * 180 / Math.PI) 
+            const sogKts = nav.speedOverGround !== undefined && nav.speedOverGround !== null
+                ? nav.speedOverGround * 1.94384
                 : null;
-            const depth = env.depth?.belowKeel !== undefined 
-                ? env.depth.belowKeel.toFixed(1) 
+
+            // At the dock/anchor nothing changes hour after hour: write ONE
+            // stationary entry, then stay quiet until the boat moves again.
+            const stationary = sogKts !== null && sogKts < 0.5;
+            if (stationary && this._lastHourlyStationary) {
+                this.app.debug('Hourly logbook entry skipped (still stationary)');
+                return;
+            }
+            this._lastHourlyStationary = stationary;
+
+            const speed = sogKts !== null ? sogKts.toFixed(1) : null;
+            const course = nav.courseOverGroundTrue !== undefined && nav.courseOverGroundTrue !== null
+                ? Math.round(nav.courseOverGroundTrue * 180 / Math.PI)
                 : null;
-            const windSpeed = env.wind?.speedApparent !== undefined 
-                ? (env.wind.speedApparent * 1.94384).toFixed(1) 
+            const heading = nav.headingTrue !== undefined && nav.headingTrue !== null
+                ? Math.round(nav.headingTrue * 180 / Math.PI)
                 : null;
-            const windAngle = env.wind?.angleApparent !== undefined 
-                ? Math.round(env.wind.angleApparent * 180 / Math.PI) 
+            const depth = env.depth?.belowKeel !== undefined && env.depth?.belowKeel !== null
+                ? env.depth.belowKeel.toFixed(1)
                 : null;
-            
-            // Format position for display
-            const positionStr = position 
-                ? `${position.latitude?.toFixed(4)}°, ${position.longitude?.toFixed(4)}°`
-                : 'Unknown';
-            
-            // Build summary
-            const summary = `${positionStr}, SOG ${speed}, COG ${course}°`;
-            
+            // Measured wind: true when available, otherwise apparent (== true at SOG 0)
+            const windMs = env.wind?.speedTrue ?? env.wind?.speedApparent;
+            const windSpeed = windMs !== undefined && windMs !== null
+                ? (windMs * 1.94384).toFixed(1)
+                : null;
+            const windAngle = env.wind?.angleApparent !== undefined && env.wind?.angleApparent !== null
+                ? Math.round(env.wind.angleApparent * 180 / Math.PI)
+                : null;
+
+            // Build summary from the data that actually exists — no N/A filler
+            const ktsLabel = this.cm.t('units.knots_abbr');
+            const parts = [];
+            if (position?.latitude !== undefined) {
+                parts.push(`${position.latitude.toFixed(4)}°, ${position.longitude.toFixed(4)}°`);
+            }
+            if (speed !== null) parts.push(`SOG ${speed} ${ktsLabel}`);
+            if (course !== null) parts.push(`COG ${course}°`);
+            if (windSpeed !== null) parts.push(`${this.cm.t('logbook.wind')} ${windSpeed} ${ktsLabel}`);
+            if (depth !== null) parts.push(`${depth} m`);
+            const summary = parts.length > 0 ? parts.join(', ') : this.cm.t('general.no_data');
+
             // Create logbook entry
             const logEntry = {
                 summary,
                 confidence: 1.0,
                 metrics: {
-                    speed: speed !== 'N/A' ? parseFloat(speed) : null,
-                    course: course !== 'N/A' ? course : null,
+                    speed: speed !== null ? parseFloat(speed) : null,
+                    course,
                     heading,
                     depth: depth ? parseFloat(depth) : null,
                     windSpeed: windSpeed ? parseFloat(windSpeed) : null,
@@ -1291,6 +1334,16 @@ class OrchestratorBrain {
      * Log system events to logbook
      */
     async logSystemEvent(eventType, data) {
+        // Bare startup/shutdown markers add one entry per SignalK restart and
+        // drown the logbook (the startup analysis already records a real
+        // briefing). Only log them when explicitly enabled; mode changes and
+        // other events remain part of the cruise chronology.
+        if ((eventType === 'startup' || eventType === 'shutdown') &&
+            this.config.logbook?.logSystemEvents !== true) {
+            this.app.debug(`System event ${eventType} not logged (logbook.logSystemEvents disabled)`);
+            return;
+        }
+
         try {
             await this.logbookManager.logAnalysis(eventType, {
                 summary: data.summary,
