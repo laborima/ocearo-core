@@ -577,8 +577,21 @@ class MeteoAnalyzer {
      * Generate analysis with LLM enrichment.
      */
     async generateAnalysis(weatherData, tideData, vesselData, context, assessment) {
+        // Bound the LLM time: on the RPi5 a single generation can take minutes
+        // (CPU-capped Ollama, queued scheduled analyses). Callers — the UI's
+        // "weather" button in particular — need an answer within a predictable
+        // delay, so past the budget we fall back to the expert template.
+        const budgetMs = (this.config.llm?.interactiveTimeoutSeconds || 45) * 1000;
+        let budgetTimer;
         try {
-            const llmResult = await this.llm.analyzeWeather(weatherData, vesselData, context, { tideData, assessment });
+            const llmPromise = this.llm.analyzeWeather(weatherData, vesselData, context, { tideData, assessment });
+            llmPromise.catch(() => {}); // avoid unhandled rejection if the budget wins
+            const llmResult = await Promise.race([
+                llmPromise,
+                new Promise((_, reject) => {
+                    budgetTimer = setTimeout(() => reject(new Error('LLM analysis budget exceeded')), budgetMs);
+                })
+            ]);
             const recommendations = this.generateRecommendations(assessment);
 
             const speech = typeof llmResult?.speech === 'string' ? llmResult.speech : (typeof llmResult === 'string' ? llmResult : '');
@@ -592,8 +605,10 @@ class MeteoAnalyzer {
                 summary: this.generateSummary(weatherData, assessment, recommendations)
             };
         } catch (error) {
-            this.app.debug('LLM weather analysis unavailable, using expert analysis');
+            this.app.debug(`LLM weather analysis unavailable (${error.message}), using expert analysis`);
             return this.getFallbackAnalysisText(weatherData, assessment);
+        } finally {
+            clearTimeout(budgetTimer);
         }
     }
 
