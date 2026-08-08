@@ -172,9 +172,11 @@ class AutopilotCommander {
 
         if (statusCode >= 400) {
             const message = (reply && reply.message) || `PUT ${path} rejected (${statusCode})`;
-            // 405 is the server telling us nothing handles this path, i.e. no
-            // autopilot plugin is loaded — a configuration problem, not a glitch
-            this._channel = statusCode === 405 ? CHANNEL.UNAVAILABLE : this._channel;
+            // 405 is the server saying nothing handles this path at all, i.e. no
+            // autopilot plugin is loaded — a configuration problem. Any other
+            // rejection means a handler did answer and simply refused this
+            // command (typically "not in auto mode"), so the channel itself works.
+            this._channel = statusCode === 405 ? CHANNEL.UNAVAILABLE : CHANNEL.OK;
             this._lastError = message;
             throw new Error(message);
         }
