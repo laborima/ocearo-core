@@ -127,6 +127,7 @@ const OrchestratorBrain = require('./src/brain');
 const LogbookManager = require('./src/logbook');
 const ConfigManager = require('./src/config');
 const ControllerManager = require('./src/controller');
+const SystemMetrics = require('./src/system');
 
 module.exports = function(app) {
     const plugin = {};
@@ -453,6 +454,21 @@ module.exports = function(app) {
             }
         });
         
+        // Host metrics for the UI's Raspberry Pi tab. Deliberately independent of
+        // plugin state (no brain/component lookup), so it keeps working across
+        // plugin restarts — registerWithRouter is only ever called once.
+        // CPU percentages need two samples, so the instance is kept here.
+        const systemMetrics = new SystemMetrics();
+        router.get('/system/metrics', (req, res) => {
+            try {
+                const topN = Math.min(Math.max(parseInt(req.query.top, 10) || 8, 1), 25);
+                res.json(systemMetrics.snapshot(topN));
+            } catch (error) {
+                app.error(`System metrics failed: ${error.message}`);
+                res.status(500).json({ error: 'Could not read system metrics', message: error.message });
+            }
+        });
+
         // Do-not-disturb — silence voice and pause scheduled analyses
         router.get('/dnd', (req, res) => {
             if (!brain) {

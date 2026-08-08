@@ -344,7 +344,15 @@ class OrchestratorBrain {
     async performStartupAnalysis() {
         if (!this.state.started) return;
         if (this.state.dnd !== 'off') return;
-        
+        // Alongside, a full spoken briefing on every server restart is both the
+        // "too verbose in harbour" complaint and the single biggest CPU spike on
+        // the Pi: each generation took 60-80s on llama3.2:1b, several per start,
+        // some timing out. Nothing here is safety-critical at the dock.
+        if (!this.isUnderway()) {
+            this.app.debug('Moored — skipping startup analysis');
+            return;
+        }
+
         this.app.debug('Starting comprehensive startup analysis');
         
         try {
@@ -719,6 +727,10 @@ class OrchestratorBrain {
      */
     async updateWeather() {
         if (!this.state.started) return;
+        // Moored, the five-minute weather run buys nothing and keeps the SoC hot
+        // (measured 83 degC with the firmware reporting frequency-capped). The
+        // forecast is still fetched and displayed; only the LLM commentary stops.
+        if (!this.isUnderway()) return;
 
         try {
             const vesselData = await this.signalkProvider.getVesselData();
@@ -954,6 +966,9 @@ class OrchestratorBrain {
      */
     async analyzeSailing() {
         if (!this.state.started || this.config.mode === 'anchored') return;
+        // Sail trim advice is meaningless alongside, and the LLM run behind it is
+        // the heaviest recurring job on the Pi.
+        if (!this.isUnderway()) return;
         if (this.state.dnd !== 'off') return;
         
         try {
@@ -1510,6 +1525,23 @@ class OrchestratorBrain {
      * @param {string} message   the message about to be spoken
      * @returns {boolean}
      */
+    /**
+     * Is the vessel under way?
+     *
+     * Reads `navigation.state` (autostate plugin). Unknown state means under way,
+     * so a missing plugin can never silently disable an analysis.
+     * @returns {boolean}
+     */
+    isUnderway() {
+        try {
+            const state = this.signalkProvider?._getSelfPath?.('navigation.state');
+            if (typeof state !== 'string') return true;
+            return !['moored', 'anchored'].includes(state);
+        } catch {
+            return true;
+        }
+    }
+
     _shouldSpeak(key, message) {
         const signature = String(message || '').toLowerCase().replace(/\s+/g, ' ').trim();
         if (!signature) return false;

@@ -53,9 +53,17 @@ const DIGITAL_THRESHOLD = 0.5;
 const REPEAT_DELAY_MS = 500;
 const REPEAT_INTERVAL_MS = 250;
 
-/** Proportional steering: tick rate and the slew rate at full stick. */
+/**
+ * Proportional steering: tick rate, and the slew rate at full stick and 100 %
+ * sensitivity. The rate has to be in the same league as holding a heading button
+ * (±10° every 250 ms), otherwise a fully deflected stick creeps so slowly that it
+ * reads as broken — which is exactly how it felt at 6°/s.
+ */
 const RUDDER_TICK_MS = 100;
-const MAX_RUDDER_RATE_DEG_PER_S = 6;
+const MAX_RUDDER_RATE_DEG_PER_S = 25;
+
+/** Largest step the autopilot accepts, used to spend built-up angle efficiently. */
+const MAX_RUDDER_STEP = 10;
 
 const DEFAULT_CONFIG = {
     enabled: true,
@@ -456,11 +464,25 @@ class ControllerManager {
         const rate = MAX_RUDDER_RATE_DEG_PER_S * (this.config.sensitivity.rudder / 100) * net;
         this._rudderAccumulator += rate * (RUDDER_TICK_MS / 1000);
 
+        // A pilot that stops answering must not let the requested turn bank up,
+        // or it would all be dumped at once the moment it answers again
+        const cap = MAX_RUDDER_STEP + 5;
+        this._rudderAccumulator = Math.max(-cap, Math.min(cap, this._rudderAccumulator));
+
         while (Math.abs(this._rudderAccumulator) >= 1) {
-            const step = this._rudderAccumulator > 0 ? 1 : -1;
+            // The pilot only takes 1° and 10° steps, so spend the built-up angle in
+            // 10s while there is enough of it and in 1s for the remainder
+            const magnitude = Math.abs(this._rudderAccumulator) >= MAX_RUDDER_STEP
+                ? MAX_RUDDER_STEP
+                : 1;
+            const step = this._rudderAccumulator > 0 ? magnitude : -magnitude;
+
+            // Only consume the accumulator once the command has actually been sent —
+            // decrementing on a dropped command silently swallowed stick input
+            if (!this._send(step > 0 ? 'rudderRight' : 'rudderLeft',
+                () => this.commander.adjustHeading(step))) break;
+
             this._rudderAccumulator -= step;
-            this._send(step > 0 ? 'rudderRight' : 'rudderLeft', () =>
-                this.commander.adjustHeading(step));
         }
     }
 
@@ -488,11 +510,12 @@ class ControllerManager {
      * not build a backlog that keeps turning the boat after the stick is centred.
      * @param {string} action
      * @param {function(): Promise} run
+     * @returns {Promise|null} null when the command was dropped
      */
     _send(action, run) {
         if (this._commandInFlight) {
             this.app.debug(`Controller: ${action} dropped, previous command still running`);
-            return undefined;
+            return null;
         }
 
         this._commandInFlight = true;
