@@ -1,38 +1,47 @@
 {
   "type": "object",
   "properties": {
-
     "language": {
       "type": "string",
       "title": "Language",
       "description": "Language for voice assistant and reports.",
-      "enum": ["en", "fr"],
+      "enum": [
+        "en",
+        "fr"
+      ],
       "default": "fr"
     },
-
     "personality": {
       "type": "string",
       "title": "Personality",
       "description": "Voice assistant tone.",
-      "enum": ["professional", "jarvis", "friend", "sea dog"],
+      "enum": [
+        "professional",
+        "jarvis",
+        "friend",
+        "sea dog"
+      ],
       "default": "jarvis"
     },
-
     "boat": {
       "type": "string",
       "title": "Boat Model",
       "description": "Boat config file name without .json. E.g. dufour310gl",
       "default": "dufour310gl"
     },
-
     "mode": {
       "type": "string",
       "title": "Operating Mode",
       "description": "Current vessel mode, used to adapt analyses.",
-      "enum": ["sailing", "anchored", "motoring", "moored", "racing"],
+      "enum": [
+        "sailing",
+        "anchored",
+        "motoring",
+        "moored",
+        "racing"
+      ],
       "default": "sailing"
     },
-
     "llm": {
       "type": "object",
       "title": "AI (LLM)",
@@ -50,19 +59,19 @@
           "description": "Ollama server URL.",
           "default": "http://localhost:11434"
         },
-       "model": {
-        "type": "string",
-        "title": "LLM Model",
-        "description": "Ollama model name. Best models for Raspberry Pi 5 (8GB). Recommended: gemma3n:e2b (best quality/speed ratio) or gemma3:1b (fastest, lightest).",
-        "enum": [
-          "gemma3n:e2b",
-          "gemma3:1b",
-          "qwen3:1.7b",
-          "phi3:mini",
-          "llama3.2:3b"
-        ],
-        "default": "gemma3n:e2b"
-      },
+        "model": {
+          "type": "string",
+          "title": "LLM Model",
+          "description": "Ollama model name. Best models for Raspberry Pi 5 (8GB). Recommended: gemma3n:e2b (best quality/speed ratio) or gemma3:1b (fastest, lightest).",
+          "enum": [
+            "gemma3n:e2b",
+            "gemma3:1b",
+            "qwen3:1.7b",
+            "phi3:mini",
+            "llama3.2:3b"
+          ],
+          "default": "gemma3n:e2b"
+        },
         "timeoutSeconds": {
           "type": "number",
           "title": "AI Timeout (s)",
@@ -73,7 +82,6 @@
         }
       }
     },
-
     "voice": {
       "type": "object",
       "title": "Voice (TTS)",
@@ -89,21 +97,35 @@
           "type": "string",
           "title": "TTS Backend",
           "description": "piper = high quality (RPi5), espeak = lightweight, console = logs only.",
-          "enum": ["kokoro", "piper", "espeak", "console"],
+          "enum": [
+            "kokoro",
+            "piper",
+            "espeak",
+            "console"
+          ],
           "default": "kokoro"
         },
         "kokoroVoiceEn": {
           "type": "string",
           "title": "Kokoro voice (EN)",
           "description": "English Kokoro voice.",
-          "enum": ["af_heart","af_bella","am_adam","am_michael","bf_emma","bm_george"],
+          "enum": [
+            "af_heart",
+            "af_bella",
+            "am_adam",
+            "am_michael",
+            "bf_emma",
+            "bm_george"
+          ],
           "default": "af_heart"
         },
         "kokoroVoiceFr": {
           "type": "string",
           "title": "Kokoro voice (FR)",
           "description": "French Kokoro voice.",
-          "enum": ["ff_siwis"],
+          "enum": [
+            "ff_siwis"
+          ],
           "default": "ff_siwis"
         },
         "kokoroSpeed": {
@@ -139,7 +161,6 @@
         }
       }
     },
-
     "logbook": {
       "type": "object",
       "title": "Logbook",
@@ -171,7 +192,6 @@
         }
       }
     },
-
     "alerts": {
       "type": "object",
       "title": "Alerts",
@@ -193,7 +213,6 @@
         }
       }
     },
-
     "schedules": {
       "type": "object",
       "title": "Analysis Schedules",
@@ -241,7 +260,6 @@
         }
       }
     },
-
     "startupAnalysis": {
       "type": "object",
       "title": "Startup Analysis",
@@ -299,7 +317,6 @@
         }
       }
     },
-
     "anchor": {
       "type": "object",
       "title": "Anchor Watch",
@@ -331,7 +348,6 @@
         }
       }
     },
-
     "ais": {
       "type": "object",
       "title": "AIS Collision Detection",
@@ -393,7 +409,6 @@
         }
       }
     },
-
     "weatherProvider": {
       "type": "object",
       "title": "Weather Provider",
@@ -409,7 +424,6 @@
         }
       }
     },
-
     "tidesProvider": {
       "type": "object",
       "title": "Tides",
@@ -422,7 +436,27 @@
           "default": true
         }
       }
+    },
+    "controller": {
+      "type": "object",
+      "title": "PlayStation Controller",
+      "description": "Drive the autopilot from a Bluetooth DualSense/DualShock read directly from /dev/input. Button mappings and sensitivity are edited from the autopilot screen of ocearo-ui and persisted separately; the values here are only the initial defaults.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enabled",
+          "description": "Read the controller and let it command the autopilot.",
+          "default": true
+        },
+        "engageHoldMs": {
+          "type": "number",
+          "title": "Hold To Engage (ms)",
+          "description": "How long the engage button must be held before the autopilot is engaged, so a controller knocked about in the cockpit cannot hand over the helm. Disengaging is always immediate. 0 disables the hold.",
+          "default": 1000,
+          "minimum": 0,
+          "maximum": 5000
+        }
+      }
     }
-
   }
 }

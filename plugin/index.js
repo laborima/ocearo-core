@@ -126,6 +126,7 @@ const VoiceModule = require('./src/voice');
 const OrchestratorBrain = require('./src/brain');
 const LogbookManager = require('./src/logbook');
 const ConfigManager = require('./src/config');
+const ControllerManager = require('./src/controller');
 
 module.exports = function(app) {
     const plugin = {};
@@ -195,6 +196,10 @@ module.exports = function(app) {
                 components.voice = new VoiceModule(app, options || {});
                 components.voice.start();
 
+                app.debug('Initializing Controller Manager...');
+                components.controller = new ControllerManager(app, options || {});
+                components.controller.start();
+
                 app.debug('Creating Orchestrator Brain...');
                 brain = new OrchestratorBrain(app, options, components);
                 await brain.start();
@@ -222,6 +227,7 @@ module.exports = function(app) {
             
             // Cleanup any started components
             try {
+                if (components.controller) components.controller.stop();
                 if (components.voice) components.voice.stop();
                 if (components.signalkProvider) components.signalkProvider.stop();
                 if (components.memoryManager) await components.memoryManager.stop();
@@ -245,6 +251,7 @@ module.exports = function(app) {
             }
             
             // Stop components
+            if (components.controller) components.controller.stop();
             if (components.voice) components.voice.stop();
             if (components.weatherProvider) components.weatherProvider.stop();
             if (components.tidesProvider) await components.tidesProvider.stop();
@@ -307,6 +314,36 @@ module.exports = function(app) {
         if (brain && brain.anchorPlugin) {
             brain.anchorPlugin.registerWithRouter(router);
         }
+
+        // ── PlayStation controller → autopilot ────────────────────────────────
+        // Signal K calls registerWithRouter once, and it does so while the
+        // asynchronous plugin.start() is still running — and never again when the
+        // plugin is restarted from the admin UI. So these handlers must resolve
+        // components.controller per request instead of capturing the instance.
+        const controllerReady = requireComponent(() => components.controller, 'Controller');
+
+        router.get('/api/controller/config', controllerReady, (req, res) => {
+            res.json(components.controller.snapshot());
+        });
+
+        router.put('/api/controller/config', controllerReady, (req, res) => {
+            try {
+                components.controller.updateConfig(req.body);
+                res.json(components.controller.snapshot());
+            } catch (error) {
+                app.error(`Controller configuration update failed: ${error.message}`);
+                res.status(500).json({
+                    error: 'Could not update controller configuration',
+                    message: error.message
+                });
+            }
+        });
+
+        // Raw input snapshot — lets a mapping be checked from the UI or curl
+        // without needing shell access to the Pi
+        router.get('/api/controller/state', controllerReady, (req, res) => {
+            res.json(components.controller.inputState());
+        });
 
         // Health check endpoint - lightweight check for monitoring
         router.get('/health', async (req, res) => {
