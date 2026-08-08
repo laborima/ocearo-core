@@ -49,15 +49,27 @@ const STEP_DEGREES = {
 /** An axis mapped to a button-like action counts as pressed past this fraction. */
 const DIGITAL_THRESHOLD = 0.5;
 
-/** Key-repeat while a heading step action is held down. */
+/** How long a heading step action must be held down before it starts repeating. */
 const REPEAT_DELAY_MS = 500;
-const REPEAT_INTERVAL_MS = 250;
+
+/**
+ * Sustained slew rate for a held heading button, in degrees per second.
+ *
+ * The repeat is bounded in degrees rather than in commands, because no single
+ * interval suits both step sizes: 250 ms is calm on the 1° buttons (4°/s) and
+ * wild on the 10° ones, where it slews at 40°/s and puts the target hundreds of
+ * degrees away within a couple of seconds.
+ */
+const REPEAT_RATE_DEG_PER_S = 10;
+
+/** Floor on the repeat interval, so the 1° buttons stay responsive. */
+const MIN_REPEAT_INTERVAL_MS = 250;
 
 /**
  * Proportional steering: tick rate, and the slew rate at full stick and 100 %
- * sensitivity. The rate has to be in the same league as holding a heading button
- * (±10° every 250 ms), otherwise a fully deflected stick creeps so slowly that it
- * reads as broken — which is exactly how it felt at 6°/s.
+ * sensitivity. The rate has to be in the same league as holding a heading button,
+ * otherwise a fully deflected stick creeps so slowly that it reads as broken —
+ * which is exactly how it felt at 6°/s.
  */
 const RUDDER_TICK_MS = 100;
 const MAX_RUDDER_RATE_DEG_PER_S = 25;
@@ -374,11 +386,24 @@ class ControllerManager {
 
         // Heading steps: fire at once, then key-repeat while held
         this._dispatch(action);
+
+        const interval = this._repeatIntervalFor(action);
         this._timers[action] = setTimeout(() => {
             this._timers[action] = setInterval(() => {
                 if (this._active[action]) this._dispatch(action);
-            }, REPEAT_INTERVAL_MS);
+            }, interval);
         }, REPEAT_DELAY_MS);
+    }
+
+    /**
+     * Key-repeat interval for a held heading button, derived from its step size so
+     * that every heading button slews at the same bounded rate.
+     * @param {string} action
+     * @returns {number} milliseconds between repeats
+     */
+    _repeatIntervalFor(action) {
+        const degrees = Math.abs(STEP_DEGREES[action] || 1);
+        return Math.max(MIN_REPEAT_INTERVAL_MS, (degrees / REPEAT_RATE_DEG_PER_S) * 1000);
     }
 
     /**
