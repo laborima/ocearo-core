@@ -146,12 +146,13 @@ class ControllerManager {
 
         this.device.on('connected', dev => {
             this.app.debug(`Controller ready for autopilot: ${dev.name}`);
-            this._resetInputState();
+            // Nothing was steering, and connecting must never command the helm
+            this._resetInputState({ settle: false });
         });
 
         this.device.on('disconnected', reason => {
-            // Drop every pending repeat so a controller lost mid-command cannot
-            // leave the boat turning
+            // Drop every pending repeat, and freeze any turn in progress, so a
+            // controller lost mid-steer cannot leave the boat turning
             this._resetInputState();
             this.app.debug(`Controller gone (${reason}) — autopilot commands stopped`);
         });
@@ -175,7 +176,8 @@ class ControllerManager {
 
     /** Stop reading the controller and release everything. */
     stop() {
-        this._resetInputState();
+        // Shutting the plugin down must not send anything to the helm
+        this._resetInputState({ settle: false });
         this.device.removeAllListeners();
         this.device.stop();
         this.app.debug('ControllerManager stopped');
@@ -306,17 +308,22 @@ class ControllerManager {
     // Input → action
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Forget all input and cancel every pending repeat. */
-    _resetInputState() {
+    /**
+     * Forget all input and cancel every pending repeat.
+     * @param {object} [options]
+     * @param {boolean} [options.settle]  freeze a turn in progress onto the current
+     *                                    heading; pass false when it would be wrong
+     *                                    to touch the helm at all
+     */
+    _resetInputState({ settle = true } = {}) {
         this._buttons = [];
         this._axes = [];
         this._active = {};
-        this._rudderAccumulator = 0;
 
         for (const handle of Object.values(this._timers)) clearTimeout(handle);
         this._timers = {};
 
-        this._stopRudder();
+        this._stopRudder({ settle });
     }
 
     /**
@@ -462,12 +469,38 @@ class ControllerManager {
         }
     }
 
-    /** Stop proportional steering. */
-    _stopRudder() {
+    /**
+     * Stop proportional steering and, unless told otherwise, freeze the turn onto
+     * the heading the boat has actually reached.
+     *
+     * This is what makes letting go of the stick stop the helm. The stick moves the
+     * pilot's *target*, not the rudder — there is no rudder command on this bus — so
+     * without this the pilot would keep driving towards the last target it was given
+     * long after the stick was centred.
+     *
+     * @param {object} [options]
+     * @param {boolean} [options.settle]
+     */
+    _stopRudder({ settle = true } = {}) {
         if (!this._rudderTimer) return;
         clearInterval(this._rudderTimer);
         this._rudderTimer = null;
+
         this._rudderAccumulator = 0;
+        if (settle) this._settleOnCurrentHeading();
+    }
+
+    /**
+     * Tell the pilot to hold the heading the boat is actually on, cancelling any
+     * turn still in progress. Forced past the in-flight guard: a nudge sent on the
+     * last tick may still be outstanding, and this is the one command that must not
+     * be dropped — dropping it is what leaves the helm hard over.
+     */
+    _settleOnCurrentHeading() {
+        // Nothing to freeze if the pilot is not steering
+        if (!this.commander.engaged) return;
+
+        this._send('holdHeading', () => this.commander.holdCurrentHeading(), { force: true });
     }
 
     /**
@@ -535,10 +568,12 @@ class ControllerManager {
      * not build a backlog that keeps turning the boat after the stick is centred.
      * @param {string} action
      * @param {function(): Promise} run
+     * @param {object} [options]
+     * @param {boolean} [options.force]  send even if a command is outstanding
      * @returns {Promise|null} null when the command was dropped
      */
-    _send(action, run) {
-        if (this._commandInFlight) {
+    _send(action, run, { force = false } = {}) {
+        if (this._commandInFlight && !force) {
             this.app.debug(`Controller: ${action} dropped, previous command still running`);
             return null;
         }

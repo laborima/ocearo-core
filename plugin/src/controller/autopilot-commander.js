@@ -18,6 +18,8 @@
 const STATE_PATH = 'steering.autopilot.state';
 const ADJUST_HEADING_PATH = 'steering.autopilot.actions.adjustHeading';
 const TARGET_HEADING_PATH = 'steering.autopilot.target.headingMagnetic';
+/** The pilot steers to magnetic, so the heading we freeze onto must match. */
+const HEADING_PATH = 'navigation.headingMagnetic';
 
 const ENGAGED_STATE = 'auto';
 const STANDBY_STATE = 'standby';
@@ -124,6 +126,24 @@ class AutopilotCommander {
     }
 
     /**
+     * Freeze the turn where it is by holding the heading the vessel has actually
+     * reached.
+     *
+     * Needed because the stick moves the *target*, not the rudder: letting go would
+     * otherwise leave the pilot chasing the last target it was given and the helm
+     * driving on. Snapping the target to the real heading is the closest thing the
+     * pilot's command set offers to "stop turning and hold what we have".
+     */
+    async holdCurrentHeading() {
+        const heading = this.app.getSelfPath(`${HEADING_PATH}.value`);
+        if (typeof heading !== 'number') {
+            throw new Error('No magnetic heading on the bus — cannot hold the current heading');
+        }
+
+        return this._put(TARGET_HEADING_PATH, heading, 'holdCurrentHeading');
+    }
+
+    /**
      * Fallback for pilots that only accept an absolute target heading.
      * @param {number} degrees  delta to apply to the current target
      */
@@ -189,4 +209,4 @@ class AutopilotCommander {
 
 module.exports = AutopilotCommander;
 module.exports.CHANNEL = CHANNEL;
-module.exports.PATHS = { STATE_PATH, ADJUST_HEADING_PATH, TARGET_HEADING_PATH };
+module.exports.PATHS = { STATE_PATH, ADJUST_HEADING_PATH, TARGET_HEADING_PATH, HEADING_PATH };
