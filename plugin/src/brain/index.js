@@ -522,17 +522,24 @@ class OrchestratorBrain {
 
             if (result.status === 'at_risk') {
                 // Speak expert advice
+                // This runs every 60s for as long as the condition holds, so a
+                // battery sitting just under its threshold at the dock used to
+                // re-announce itself every single minute. Debounce on the message
+                // itself, like the sail advice already does.
                 if (result.expertAdvice && result.expertAdvice.length > 0) {
                     const criticalAdvice = result.expertAdvice.filter(a => a.priority === 'critical');
                     const adviceToSpeak = criticalAdvice.length > 0 ? criticalAdvice : [result.expertAdvice[0]];
-                    
+
                     for (const advice of adviceToSpeak) {
-                        this.voice.speak(advice.message, { priority: advice.priority });
+                        if (this._shouldSpeak(`failure.advice.${advice.priority}`, advice.message)) {
+                            this.voice.speak(advice.message, { priority: advice.priority });
+                        }
                     }
                 }
 
                 // Try LLM-enriched analysis
-                if (result.analysis && result.analysis.speech) {
+                if (result.analysis && result.analysis.speech
+                    && this._shouldSpeak('failure.analysis', result.analysis.speech)) {
                     this.voice.speak(result.analysis.speech, { priority: 'high' });
                 }
 
@@ -2219,7 +2226,13 @@ class OrchestratorBrain {
         try {
             const r = this.aisAnalyzer.checkCollisionRisks(vesselData);
             ais = { totalInRange: r.totalInRange, dangerCount: r.dangerCount, cautionCount: r.cautionCount };
-            const t = (r.targets || []).find(x => x.risk === 'danger') || (r.targets || [])[0];
+            // Only name a target when its closest-point figures are actually
+            // computable — otherwise the briefing reads "CPA 0 in 0 minutes",
+            // which a small local model reports as an imminent collision.
+            const usable = (r.targets || []).filter(
+                x => Number.isFinite(x?.cpa) && Number.isFinite(x?.tcpa) && x.tcpa > 0
+            );
+            const t = usable.find(x => x.risk === 'danger') || usable[0];
             if (t) nearest = { name: t.name, cpa: t.cpa, tcpa: t.tcpa, bearing: t.bearing };
         } catch { /* AIS optional */ }
 

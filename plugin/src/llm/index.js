@@ -578,7 +578,9 @@ class LLMModule {
             L.push(d);
         }
 
-        if (s.ais && (s.ais.dangerCount || s.ais.cautionCount || s.ais.totalInRange)) {
+        // `totalInRange` alone is not a reason to talk about traffic: it counts
+        // every vessel in the model, so a boat with no AIS receiver still scored 1.
+        if (s.ais && (s.ais.dangerCount || s.ais.cautionCount)) {
             let a = fr ? `Trafic AIS ${s.ais.totalInRange ?? 0} cibles, ${s.ais.dangerCount ?? 0} dangereuses`
                        : `AIS ${s.ais.totalInRange ?? 0} targets, ${s.ais.dangerCount ?? 0} dangerous`;
             if (s.ais.nearest?.name) {
