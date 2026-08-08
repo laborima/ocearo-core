@@ -604,6 +604,15 @@ class LogbookManager {
         if (out.log === undefined && typeof ctx.log === 'number') out.log = ctx.log;
         if (!out.engine && ctx.engine) out.engine = ctx.engine;
 
+        // Depth lives in vesselContext for entries built by getVesselContext(), and
+        // in analysis.metrics for the hourly entries created by the brain.
+        if (out.depth === undefined) {
+            const depth = typeof ctx.depth === 'number'
+                ? ctx.depth
+                : entry.analysis?.metrics?.depth;
+            if (typeof depth === 'number' && Number.isFinite(depth)) out.depth = depth;
+        }
+
         return out;
     }
 
