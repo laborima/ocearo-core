@@ -297,7 +297,15 @@ class AISAnalyzer {
             const vessels = this._getOtherVessels();
             if (!vessels) return targets;
 
+            const selfId = this._getSelfId();
+
             for (const [id, vessel] of Object.entries(vessels)) {
+                // `vessels` includes our own vessel. Without this filter the boat
+                // reports itself as a target at CPA 0 / TCPA 0, which then sorts
+                // first and is announced as an imminent collision even with no AIS
+                // receiver connected at all.
+                if (selfId && id === selfId) continue;
+
                 const pos = this._extractNestedValue(vessel, 'navigation.position');
                 if (!pos || pos.latitude === undefined) continue;
 
@@ -326,6 +334,27 @@ class AISAnalyzer {
             this.app.debug('AIS: Error reading targets:', error.message);
         }
         return targets;
+    }
+
+    /**
+     * Resolve our own vessel key inside the `vessels` context.
+     *
+     * Signal K exposes it as `self` in the form `vessels.urn:mrn:signalk:uuid:…`,
+     * while the keys of the `vessels` object are the bare URNs.
+     * @returns {string|null}
+     */
+    _getSelfId() {
+        try {
+            const raw = this.app.selfId
+                || this.app.selfContext
+                || (typeof this.app.getSelfPath === 'function' ? this.app.selfContext : null);
+            if (typeof raw === 'string' && raw.length) {
+                return raw.startsWith('vessels.') ? raw.slice('vessels.'.length) : raw;
+            }
+        } catch (error) {
+            this.app.debug('AIS: Cannot resolve self id:', error.message);
+        }
+        return null;
     }
 
     /**

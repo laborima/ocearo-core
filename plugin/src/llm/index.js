@@ -63,6 +63,48 @@ class LLMModule {
     }
 
     /**
+     * Start the local Ollama service if it is not listening.
+     *
+     * `ollama-power.service` stops Ollama after a long idle period: on a Pi 5 that
+     * also drives two kiosks it was the heaviest process on the box and the SoC
+     * was running thermally throttled. Waking it costs a few seconds on the first
+     * question, which is why this only runs on the failure path.
+     *
+     * No-op unless the host is local and passwordless systemctl is available.
+     * @returns {Promise<boolean>} true if Ollama is listening afterwards
+     * @private
+     */
+    async _ensureOllamaRunning() {
+        if (!/^https?:\/\/(localhost|127\.0\.0\.1)/.test(this.baseUrl)) return false;
+        if (this._wakingOllama) return false;          // don't stack wake-ups
+        this._wakingOllama = true;
+        try {
+            const { execFile } = require('child_process');
+            const started = await new Promise((resolve) => {
+                execFile('sudo', ['-n', 'systemctl', 'start', 'ollama'], { timeout: 15000 },
+                    (err) => resolve(!err));
+            });
+            if (!started) return false;
+
+            // Poll until it answers rather than sleeping a fixed amount.
+            for (let i = 0; i < 20; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                try {
+                    const res = await fetch(`${this.baseUrl}/api/tags`, {
+                        signal: AbortSignal.timeout(2000)
+                    });
+                    if (res.ok) return true;
+                } catch { /* not up yet */ }
+            }
+            return false;
+        } catch {
+            return false;
+        } finally {
+            this._wakingOllama = false;
+        }
+    }
+
+    /**
      * Test LLM connection
      */
     async testConnection() {
@@ -177,7 +219,11 @@ class LLMModule {
         }
 
         if (!await this.checkConnectionAsync()) {
-            throw new Error('LLM service not available');
+            // Ollama is stopped while idle to keep the Pi cool (ollama-power.service),
+            // so a failed check is expected, not fatal — wake it and retry once.
+            if (!await this._ensureOllamaRunning() || !await this.checkConnectionAsync()) {
+                throw new Error('LLM service not available');
+            }
         }
 
         const controller = new AbortController();
@@ -578,7 +624,9 @@ class LLMModule {
             L.push(d);
         }
 
-        if (s.ais && (s.ais.dangerCount || s.ais.cautionCount || s.ais.totalInRange)) {
+        // `totalInRange` alone is not a reason to talk about traffic: it counts
+        // every vessel in the model, so a boat with no AIS receiver still scored 1.
+        if (s.ais && (s.ais.dangerCount || s.ais.cautionCount)) {
             let a = fr ? `Trafic AIS ${s.ais.totalInRange ?? 0} cibles, ${s.ais.dangerCount ?? 0} dangereuses`
                        : `AIS ${s.ais.totalInRange ?? 0} targets, ${s.ais.dangerCount ?? 0} dangerous`;
             if (s.ais.nearest?.name) {

@@ -678,15 +678,37 @@ class SignalKDataProvider {
    * Try to read a path value from the server via app.getSelfPath or app.signalk.getSelfPath
    * @param {string} path
    */
+  /**
+   * Unwrap a Signal K leaf node to its value.
+   *
+   * `app.getSelfPath()` resolves to the node — `{meta, value, $source, timestamp}`
+   * — not to the value. Every consumer here expects a plain number or object, and
+   * an object passes a `!== null && !== undefined` guard, so `node * 1.94384` gave
+   * NaN: NaN hourly logbook entries, all-undefined flattened data, own SOG stuck
+   * at 0, notifications never read, and JSON.stringify failures on persistence.
+   * See ocearo-core#1.
+   *
+   * Branch paths (electrical.batteries, propulsion) have no `value` key and are
+   * returned untouched.
+   * @param {*} node
+   * @returns {*}
+   */
+  _unwrap(node) {
+    if (node && typeof node === 'object' && !Array.isArray(node) && 'value' in node) {
+      return node.value;
+    }
+    return node;
+  }
+
   _getSelfPath(path) {
     try {
       if (!this.app) return undefined;
-      if (typeof this.app.getSelfPath === 'function') return this.app.getSelfPath(path);
-      if (this.app.signalk && typeof this.app.signalk.getSelfPath === 'function') return this.app.signalk.getSelfPath(path);
+      if (typeof this.app.getSelfPath === 'function') return this._unwrap(this.app.getSelfPath(path));
+      if (this.app.signalk && typeof this.app.signalk.getSelfPath === 'function') return this._unwrap(this.app.signalk.getSelfPath(path));
 
       // Some servers expose a simple data object at app.signalk.server ? try conservative read
       if (this.app.signalk && this.app.signalk.server && typeof this.app.signalk.server.getSelfPath === 'function') {
-        return this.app.signalk.server.getSelfPath(path);
+        return this._unwrap(this.app.signalk.server.getSelfPath(path));
       }
       return undefined;
     } catch (err) {

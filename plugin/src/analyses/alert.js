@@ -168,25 +168,53 @@ class AlertAnalyzer {
     }
 
     /**
+     * Is the vessel actually under way?
+     *
+     * Reads `navigation.state` (published by the autostate plugin). When the
+     * state is unknown we assume under way, so a missing plugin can never
+     * silence a real alert.
+     * @returns {boolean}
+     */
+    isUnderway() {
+        try {
+            const node = this.app?.getSelfPath?.('navigation.state');
+            const state = (node && typeof node === 'object' && 'value' in node) ? node.value : node;
+            if (typeof state !== 'string') return true;
+            return !['moored', 'anchored'].includes(state);
+        } catch {
+            return true;
+        }
+    }
+
+    /**
      * Determine if alert should be spoken
      */
     shouldSpeak(alert) {
         const mode = this.config.alertMode || 'smart';
-        
+
         if (mode === 'silent') {
             return false;
         }
-        
+
         // Always speak high severity alerts
         if (this.severityLevels[alert.severity] >= 2) {
             return true;
         }
-        
+
+        // Alongside or at anchor the running commentary that is useful offshore
+        // is just noise — every depth and tide notification in a harbour or a
+        // buoyed approach channel used to be spoken. Keep safety, drop the rest.
+        // Alarms and warnings already returned true above, so nothing that
+        // matters is lost here.
+        if (!this.isUnderway()) {
+            return alert.category === 'safety';
+        }
+
         // In verbose mode, speak all alerts
         if (mode === 'verbose') {
             return true;
         }
-        
+
         // In smart mode, speak based on category importance
         const importantCategories = ['safety', 'navigation', 'weather'];
         return importantCategories.includes(alert.category);
