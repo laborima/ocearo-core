@@ -42,6 +42,7 @@ Ocearo Core goes beyond simple dashboards. It's an intelligent AI Co-pilot that:
 - Configurable alarm radius with drag detection (haversine)
 - Signal K notifications: `notifications.navigation.anchor.drag` (`emergency`) and `notifications.navigation.anchor.watch` (`warn`)
 - Persisted anchor state — survives plugin restarts
+- Swing track: the positions the drag alarm evaluates are kept in a bounded ring buffer (decimated to 1.5 m / 20 s, capped at 720 points) and served to clients, so the path the boat describes around the anchor can be drawn instead of only the alarm circle
 - Mode-change safety: warns if mode changes while anchor is deployed
 
 ### � Logbook — Dual Backend
@@ -139,6 +140,17 @@ AnchorPlugin ──► AnchorAlarm ──► SK notifications
 - **Node.js** ≥ 18.0.0
 - **Ollama** (optional, for LLM) — [Install Ollama](https://ollama.ai)
 - **Piper TTS** (optional, for voice) — [Install Piper](https://github.com/rhasspy/piper)
+
+#### Companion Signal K plugins
+
+None of these are bundled; without them the corresponding feature is simply inert, so it is worth checking they are installed **and enabled** (an installed-but-unconfigured plugin looks identical to a working one in the Admin UI):
+
+| Plugin | Why | Without it |
+|--------|-----|------------|
+| [`@meri-imperiumi/signalk-autostate`](https://www.npmjs.com/package/@meri-imperiumi/signalk-autostate) | Publishes `navigation.state` | Alerts are never prioritised by navigation state and LLM analyses never pause at the dock — the vessel is assumed under way |
+| [`signalk-derived-data`](https://www.npmjs.com/package/signalk-derived-data) | Computes true wind and true heading from apparent wind + STW | `environment.wind.speedTrue`, `angleTrueWater`, `directionTrue` and `navigation.headingTrue` are absent; sail coaching and polar analysis have nothing to work with. Enable the `heading`, `angleTrueWater` and `directionTrue` calculations |
+| [`@signalk/set-system-time`](https://www.npmjs.com/package/@signalk/set-system-time) | Disciplines the system clock from `navigation.datetime` (GPS) | On a machine with no battery-backed RTC — a Raspberry Pi 5 out of the box — the clock is wrong after every power cut without internet, and tides, day/night and log ordering follow it |
+| [`@signalk/signalk-autopilot`](https://www.npmjs.com/package/@signalk/signalk-autopilot) | Provides the v2 autopilot API | The autopilot view has no device to talk to. A pilot on the NMEA2000 bus still publishes `steering.autopilot.state`, which makes the absence look like an idle pilot rather than a missing provider |
 
 ### Install via npm
 
@@ -249,7 +261,8 @@ All endpoints are under `/plugins/ocearo-core/`. Rate limits apply (120 req/min 
 | `/navigation/anchor/radius` | POST | Set alarm radius `{ value: metres }` |
 | `/navigation/anchor/reposition` | POST | Reposition `{ rodeLength, anchorDepth }` |
 | `/navigation/anchor/status` | GET | Lightweight status |
-| `/navigation/anchor` | GET | Full anchor state snapshot |
+| `/navigation/anchor/track` | GET | Recorded swing track, `?limit=N` for the last N points |
+| `/navigation/anchor` | GET | Full anchor state snapshot (track included) |
 
 ### LLM
 

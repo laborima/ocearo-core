@@ -42,6 +42,7 @@ Ocearo Core va au-delà des simples tableaux de bord. C'est un Copilote IA intel
 - Rayon d'alarme configurable avec détection de dérapage (haversine)
 - Notifications Signal K : `notifications.navigation.anchor.drag` (`emergency`) et `notifications.navigation.anchor.watch` (`warn`)
 - État de l'ancre persisté — survit aux redémarrages du plugin
+- Trace de swing : les positions évaluées par l'alarme de dérapage sont conservées dans un tampon circulaire borné (décimation 1,5 m / 20 s, plafond 720 points) et servies aux clients, pour dessiner le chemin parcouru autour de l'ancre au lieu du seul cercle d'alarme
 - Sécurité au changement de mode : avertit si le mode change pendant que l'ancre est mouillée
 
 ### 📔 Journal de Bord — Double Backend
@@ -139,6 +140,17 @@ AnchorPlugin ──► AnchorAlarm ──► Notifications SK
 - **Node.js** ≥ 18.0.0
 - **Ollama** (optionnel, pour le LLM) — [Installer Ollama](https://ollama.ai)
 - **Piper TTS** (optionnel, pour la voix) — [Installer Piper](https://github.com/rhasspy/piper)
+
+#### Plugins Signal K compagnons
+
+Aucun n'est embarqué ; sans eux la fonction correspondante est simplement inerte. Il vaut donc la peine de vérifier qu'ils sont installés **et activés** — un plugin installé mais jamais configuré est indiscernable d'un plugin qui marche dans l'Admin UI :
+
+| Plugin | Rôle | Sans lui |
+|--------|------|----------|
+| [`@meri-imperiumi/signalk-autostate`](https://www.npmjs.com/package/@meri-imperiumi/signalk-autostate) | Publie `navigation.state` | Les alertes ne sont jamais hiérarchisées selon l'état de navigation et les analyses LLM ne se mettent jamais en pause à quai — le bateau est supposé en route |
+| [`signalk-derived-data`](https://www.npmjs.com/package/signalk-derived-data) | Calcule le vent vrai et le cap vrai à partir du vent apparent et de la vitesse surface | `environment.wind.speedTrue`, `angleTrueWater`, `directionTrue` et `navigation.headingTrue` sont absents ; le coaching de voiles et l'analyse polaire n'ont rien à exploiter. Activer les calculs `heading`, `angleTrueWater` et `directionTrue` |
+| [`@signalk/set-system-time`](https://www.npmjs.com/package/@signalk/set-system-time) | Recale l'horloge système sur `navigation.datetime` (GPS) | Sur une machine sans RTC sauvegardée par pile — un Raspberry Pi 5 sorti de sa boîte — l'heure est fausse après chaque coupure sans internet, et marées, jour/nuit et tri du journal suivent |
+| [`@signalk/signalk-autopilot`](https://www.npmjs.com/package/@signalk/signalk-autopilot) | Fournit l'API pilote automatique v2 | La vue pilote n'a aucun appareil à qui parler. Un pilote présent sur le bus NMEA2000 publie tout de même `steering.autopilot.state`, ce qui fait passer l'absence pour un pilote au repos plutôt que pour un fournisseur manquant |
 
 ### Installation via npm
 
@@ -249,7 +261,8 @@ Tous les endpoints sont sous `/plugins/ocearo-core/`. Des limites de débit s'ap
 | `/navigation/anchor/radius` | POST | Définir le rayon d'alarme `{ value: mètres }` |
 | `/navigation/anchor/reposition` | POST | Repositionner `{ rodeLength, anchorDepth }` |
 | `/navigation/anchor/status` | GET | Statut simplifié |
-| `/navigation/anchor` | GET | Snapshot complet de l'état de l'ancre |
+| `/navigation/anchor/track` | GET | Trace de swing enregistrée, `?limit=N` pour les N derniers points |
+| `/navigation/anchor` | GET | Snapshot complet de l'état de l'ancre (trace incluse) |
 
 ### LLM
 

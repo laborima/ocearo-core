@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-08-10
+
+### Added
+
+- **Swing track around the anchor.** The drag alarm now records the positions it evaluates into a bounded ring buffer and exposes them on `GET /navigation/anchor/track` (and in the `/navigation/anchor` snapshot), so a client can draw where the boat has actually been rather than only the alarm circle. Samples are decimated in space and time (1.5 m or 20 s) and capped at 720 points — roughly four hours of swing — so the buffer stays flat in memory on the Pi. Cleared when the anchor is dropped or raised, so a previous anchorage is never drawn around the new one.
+
 ## [1.0.0] - 2026-08-10
 
 ### Added
