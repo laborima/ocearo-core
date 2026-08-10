@@ -131,6 +131,7 @@ class AnchorPlugin {
                 }
 
                 this.anchorState.drop(position);
+                this.anchorAlarm.clearTrack();
                 this.anchorAlarm.start();
                 this.anchorAlarm.publishAnchorData();
 
@@ -236,6 +237,7 @@ class AnchorPlugin {
             this.anchorState.raise();
             this.anchorAlarm.stop();
             this.anchorAlarm.clearAnchorData();
+            this.anchorAlarm.clearTrack();
 
             // Confirm raised immediately (no windlass feedback in this implementation)
             this.anchorState.confirmRaised();
@@ -266,11 +268,24 @@ class AnchorPlugin {
             });
         });
 
+        // ── SWING TRACK (GET) ─────────────────────────────────────────────────
+        // Separate from the snapshot so the 3D view can poll the track at its
+        // own cadence without re-reading the whole anchor state each time.
+        router.get('/navigation/anchor/track', (req, res) => {
+            const limit = parseInt(req.query.limit, 10);
+            res.json({
+                anchor: this.anchorState.position,
+                maxRadius: this.anchorState.maxRadius,
+                track: this.anchorAlarm.getTrack(limit)
+            });
+        });
+
         // ── FULL SNAPSHOT (GET) ───────────────────────────────────────────────
         router.get('/navigation/anchor', (req, res) => {
             res.json({
                 ...this.anchorState.snapshot(),
-                currentRadius: this.anchorAlarm.getCurrentRadius()
+                currentRadius: this.anchorAlarm.getCurrentRadius(),
+                track: this.anchorAlarm.getTrack()
             });
         });
     }

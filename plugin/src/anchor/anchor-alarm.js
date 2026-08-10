@@ -15,6 +15,20 @@
 /** Earth radius in metres for Haversine */
 const EARTH_RADIUS_M = 6371000;
 
+/**
+ * Swing track sampling.
+ *
+ * Positions arrive every 2 s; keeping them all would be ~1800 points per hour
+ * for a track that is visually indistinguishable from a decimated one. We keep
+ * a point only when the boat actually moved (TRACK_MIN_MOVE_M) or when enough
+ * time elapsed (TRACK_MIN_INTERVAL_MS) so a boat lying still still leaves a
+ * heartbeat. TRACK_MAX_POINTS bounds memory: at one point per 20 s that is
+ * about 4 h of swing, which is what you want to see to judge a veering shift.
+ */
+const TRACK_MAX_POINTS = 720;
+const TRACK_MIN_MOVE_M = 1.5;
+const TRACK_MIN_INTERVAL_MS = 20000;
+
 class AnchorAlarm {
     /**
      * @param {object}      app         Signal K app object
@@ -34,6 +48,13 @@ class AnchorAlarm {
 
         /** Whether a watch notification is currently active */
         this._watchActive = false;
+
+        /**
+         * Bounded swing track: [{ latitude, longitude, t, r }] oldest first.
+         * `r` is the distance to the anchor at that sample, so the client can
+         * colour the track without recomputing the geodesics.
+         */
+        this._track = [];
 
         /** Unsubscribe function returned by the subscription manager */
         this._unsubscribe = null;
@@ -117,6 +138,7 @@ class AnchorAlarm {
 
         const distance = this._haversine(anchorPos, vesselPos);
         this.currentRadius = distance;
+        this._recordTrackPoint(vesselPos, distance);
 
         const maxRadius = this.anchorState.maxRadius;
         const watchRadius = maxRadius * 0.8; // warn at 80 % of limit
@@ -352,6 +374,62 @@ class AnchorAlarm {
      */
     getCurrentRadius() {
         return this.currentRadius;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Swing track
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Append a position to the swing track, decimated in space and time.
+     * @param {{latitude:number, longitude:number}} pos
+     * @param {number} distance metres to the anchor at this sample
+     */
+    _recordTrackPoint(pos, distance) {
+        if (!Number.isFinite(pos?.latitude) || !Number.isFinite(pos?.longitude)) return;
+
+        const now = Date.now();
+        const last = this._track[this._track.length - 1];
+
+        if (last) {
+            const moved = this._haversine(last, pos);
+            const elapsed = now - last.t;
+            if (moved < TRACK_MIN_MOVE_M && elapsed < TRACK_MIN_INTERVAL_MS) return;
+        }
+
+        this._track.push({
+            latitude: pos.latitude,
+            longitude: pos.longitude,
+            t: now,
+            r: Math.round(distance * 10) / 10
+        });
+
+        // Ring buffer without the cost of shift() on every sample: drop the
+        // oldest quarter once full so the splice runs once per ~180 points.
+        if (this._track.length > TRACK_MAX_POINTS) {
+            this._track.splice(0, this._track.length - Math.floor(TRACK_MAX_POINTS * 0.75));
+        }
+    }
+
+    /**
+     * Return the recorded swing track, oldest first.
+     * @param {number} [limit] keep only the most recent `limit` points
+     * @returns {Array<{latitude:number, longitude:number, t:number, r:number}>}
+     */
+    getTrack(limit) {
+        if (Number.isFinite(limit) && limit > 0 && limit < this._track.length) {
+            return this._track.slice(-limit);
+        }
+        return this._track.slice();
+    }
+
+    /**
+     * Drop the swing track. Called when the anchor is dropped or raised — a
+     * track from the previous anchorage would otherwise be drawn around the
+     * new one, several miles off.
+     */
+    clearTrack() {
+        this._track = [];
     }
 }
 
