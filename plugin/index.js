@@ -129,6 +129,7 @@ const ConfigManager = require('./src/config');
 const ControllerManager = require('./src/controller');
 const SystemMetrics = require('./src/system');
 const BathymetryManager = require('./src/bathymetry');
+const AnchorPlugin = require('./src/anchor/anchor-plugin');
 
 module.exports = function(app) {
     const plugin = {};
@@ -322,10 +323,9 @@ module.exports = function(app) {
             next();
         });
 
-        // Delegate anchor API endpoints to AnchorPlugin
-        if (brain && brain.anchorPlugin) {
-            brain.anchorPlugin.registerWithRouter(router);
-        }
+        // Anchor API, resolved per request: the brain (and its AnchorPlugin)
+        // is still being created when Signal K calls registerWithRouter
+        AnchorPlugin.registerRoutes(router, () => brain && brain.anchorPlugin);
 
         BathymetryManager.registerRoutes(router, () => components.bathymetry);
 

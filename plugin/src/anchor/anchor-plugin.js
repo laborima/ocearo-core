@@ -117,9 +117,19 @@ class AnchorPlugin {
      * so paths here are relative to that prefix.
      * @param {object} router  Express router
      */
-    registerWithRouter(router) {
+    registerWithRouter(router, getSelf = () => this) {
+        // Handlers run with `this` = the current AnchorPlugin, resolved per
+        // request: Signal K registers routes while the asynchronous
+        // plugin.start() is still running (before this object exists) and
+        // never again after a restart from the admin UI.
+        const route = (method, routePath, handler) => router[method](routePath, (req, res) => {
+            const self = getSelf();
+            if (!self) return res.status(503).json({ error: 'Anchor not initialized' });
+            return handler.call(self, req, res);
+        });
+
         // ── DROP ──────────────────────────────────────────────────────────────
-        router.post('/navigation/anchor/drop', async (req, res) => {
+        route('post', '/navigation/anchor/drop', async function (req, res) {
             try {
                 const position = await this._getCurrentPosition();
                 if (!position) {
@@ -153,7 +163,7 @@ class AnchorPlugin {
         });
 
         // ── RADIUS ────────────────────────────────────────────────────────────
-        router.post('/navigation/anchor/radius', (req, res) => {
+        route('post', '/navigation/anchor/radius', function (req, res) {
             const { value } = req.body;
 
             if (value === undefined || value === null) {
@@ -186,7 +196,7 @@ class AnchorPlugin {
         });
 
         // ── REPOSITION ────────────────────────────────────────────────────────
-        router.post('/navigation/anchor/reposition', async (req, res) => {
+        route('post', '/navigation/anchor/reposition', async function (req, res) {
             const { rodeLength, anchorDepth } = req.body;
 
             if (rodeLength === undefined || anchorDepth === undefined) {
@@ -233,7 +243,7 @@ class AnchorPlugin {
         });
 
         // ── RAISE ─────────────────────────────────────────────────────────────
-        router.post('/navigation/anchor/raise', (req, res) => {
+        route('post', '/navigation/anchor/raise', function (req, res) {
             this.anchorState.raise();
             this.anchorAlarm.stop();
             this.anchorAlarm.clearAnchorData();
@@ -255,7 +265,7 @@ class AnchorPlugin {
         });
 
         // ── STATUS (GET) ──────────────────────────────────────────────────────
-        router.get('/navigation/anchor/status', (req, res) => {
+        route('get', '/navigation/anchor/status', function (req, res) {
             res.json({
                 state: this.anchorState.state,
                 position: this.anchorState.position,
@@ -271,7 +281,7 @@ class AnchorPlugin {
         // ── SWING TRACK (GET) ─────────────────────────────────────────────────
         // Separate from the snapshot so the 3D view can poll the track at its
         // own cadence without re-reading the whole anchor state each time.
-        router.get('/navigation/anchor/track', (req, res) => {
+        route('get', '/navigation/anchor/track', function (req, res) {
             const limit = parseInt(req.query.limit, 10);
             res.json({
                 anchor: this.anchorState.position,
@@ -281,7 +291,7 @@ class AnchorPlugin {
         });
 
         // ── FULL SNAPSHOT (GET) ───────────────────────────────────────────────
-        router.get('/navigation/anchor', (req, res) => {
+        route('get', '/navigation/anchor', function (req, res) {
             res.json({
                 ...this.anchorState.snapshot(),
                 currentRadius: this.anchorAlarm.getCurrentRadius(),
@@ -394,5 +404,11 @@ class AnchorPlugin {
         return this.anchorAlarm.getCurrentRadius();
     }
 }
+
+/**
+ * Registers the anchor routes before any AnchorPlugin exists: each request
+ * goes to the instance `getPlugin()` returns at that moment (503 if none).
+ */
+AnchorPlugin.registerRoutes = (router, getPlugin) => AnchorPlugin.prototype.registerWithRouter.call(null, router, getPlugin);
 
 module.exports = AnchorPlugin;
