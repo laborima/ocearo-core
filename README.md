@@ -45,6 +45,13 @@ Ocearo Core goes beyond simple dashboards. It's an intelligent AI Co-pilot that:
 - Swing track: the positions the drag alarm evaluates are kept in a bounded ring buffer (decimated to 1.5 m / 20 s, capped at 720 points) and served to clients, so the path the boat describes around the anchor can be drawn instead of only the alarm circle
 - Mode-change safety: warns if mode changes while anchor is deployed
 
+### 🌊 SHOM Bathymetry (offline)
+- High-resolution seabed for the Océaro 3D view from the SHOM digital elevation models (MNT topo-bathymétriques HOMONIM / TANDEM, 5 – 20 m on the French coast, 100 m façades), open data under the Licence Ouverte
+- When the server is online, the coastal models within `bathymetry.radiusNm` of the boat are downloaded from data.shom.fr, converted once to a compact grid in `<dataDir>/bathymetry/` and kept; at sea every display gets them from the boat's server
+- Served as Web Mercator elevation tiles in the Terrarium encoding, referenced to chart datum (like the tide heights), transparent where no model covers so clients fall back to a global source
+- Archives can also be dropped by hand in `<dataDir>/bathymetry/import/` (a `.7z` from data.shom.fr, or the `.asc` inside) and imported with `POST /bathymetry/import`
+- Needs the `7z` command to extract the archives (`apt install p7zip-full`); no npm dependency
+
 ### � Logbook — Dual Backend
 - **Primary**: proxies to `@meri-imperiumi/signalk-logbook` if installed
 - **Fallback**: registers as a Signal K Resource Provider (`logbooks`) with local JSON store in `<dataDir>/ocearo-logbook/`
@@ -189,6 +196,14 @@ npm install
 | `anchor.watchRadiusPercent` | Watch threshold (% of radius) | `80` |
 | `anchor.positionUpdateInterval` | Position check interval (ms) | `2000` |
 
+### Bathymetry
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `bathymetry.enabled` | Serve SHOM bathymetry tiles | `true` |
+| `bathymetry.autoDownload` | Download the coastal models around the boat when online (100 – 150 MB each, once) | `true` |
+| `bathymetry.radiusNm` | Area around the boat, nautical miles | `30` |
+
 ### LLM (Ollama)
 
 | Setting | Description | Default |
@@ -263,6 +278,16 @@ All endpoints are under `/plugins/ocearo-core/`. Rate limits apply (120 req/min 
 | `/navigation/anchor/status` | GET | Lightweight status |
 | `/navigation/anchor/track` | GET | Recorded swing track, `?limit=N` for the last N points |
 | `/navigation/anchor` | GET | Full anchor state snapshot (track included) |
+
+### Bathymetry (SHOM)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/bathymetry/tiles/:z/:x/:y.png` | GET | Terrarium elevation tile (zoom 8 – 16), chart datum; 404 where no model covers |
+| `/bathymetry/status` | GET | Models on board, downloads in progress, models available around the boat |
+| `/bathymetry/download` | POST | `{ id }` one model, or `{ lat?, lon?, radiusNm? }` the coastal models around a position |
+| `/bathymetry/import` | POST | Convert the archives dropped in `<dataDir>/bathymetry/import/` |
+| `/bathymetry/regions/:id` | DELETE | Remove a model |
 
 ### LLM
 

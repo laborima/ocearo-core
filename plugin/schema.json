@@ -457,6 +457,31 @@
           "maximum": 5000
         }
       }
+    },
+    "bathymetry": {
+      "type": "object",
+      "title": "Bathymetry (SHOM)",
+      "description": "High-resolution seabed for the 3D view from the SHOM digital elevation models (open data, chart datum). Downloaded when there is internet, served offline to every display. Needs the 7z command (apt install p7zip-full).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Serve SHOM bathymetry tiles",
+          "default": true
+        },
+        "autoDownload": {
+          "type": "boolean",
+          "title": "Download the coastal models around the boat when online",
+          "description": "About 100 to 150 MB per model, once.",
+          "default": true
+        },
+        "radiusNm": {
+          "type": "number",
+          "title": "Area around the boat (NM)",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 200
+        }
+      }
     }
   }
 }

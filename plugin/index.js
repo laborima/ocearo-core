@@ -128,6 +128,7 @@ const LogbookManager = require('./src/logbook');
 const ConfigManager = require('./src/config');
 const ControllerManager = require('./src/controller');
 const SystemMetrics = require('./src/system');
+const BathymetryManager = require('./src/bathymetry');
 
 module.exports = function(app) {
     const plugin = {};
@@ -201,6 +202,10 @@ module.exports = function(app) {
                 components.controller = new ControllerManager(app, options || {});
                 components.controller.start();
 
+                app.debug('Initializing Bathymetry Manager...');
+                components.bathymetry = new BathymetryManager(app, options || {});
+                components.bathymetry.start();
+
                 app.debug('Creating Orchestrator Brain...');
                 brain = new OrchestratorBrain(app, options, components);
                 await brain.start();
@@ -229,6 +234,7 @@ module.exports = function(app) {
             // Cleanup any started components
             try {
                 if (components.controller) components.controller.stop();
+                if (components.bathymetry) components.bathymetry.stop();
                 if (components.voice) components.voice.stop();
                 if (components.signalkProvider) components.signalkProvider.stop();
                 if (components.memoryManager) await components.memoryManager.stop();
@@ -253,6 +259,7 @@ module.exports = function(app) {
             
             // Stop components
             if (components.controller) components.controller.stop();
+            if (components.bathymetry) components.bathymetry.stop();
             if (components.voice) components.voice.stop();
             if (components.weatherProvider) components.weatherProvider.stop();
             if (components.tidesProvider) await components.tidesProvider.stop();
@@ -271,6 +278,10 @@ module.exports = function(app) {
     };
     
     plugin.registerWithRouter = function(router) {
+        // SHOM bathymetry tiles: open data a 3D view loads by the dozen, so
+        // before the rate limit and the authentication below
+        BathymetryManager.registerTileRoute(router, () => components.bathymetry);
+
         // Apply general rate limit and JSON validation to all routes
         router.use(rateLimit(generalLimiter));
         router.use(requireJson);
@@ -315,6 +326,8 @@ module.exports = function(app) {
         if (brain && brain.anchorPlugin) {
             brain.anchorPlugin.registerWithRouter(router);
         }
+
+        BathymetryManager.registerRoutes(router, () => components.bathymetry);
 
         // ── PlayStation controller → autopilot ────────────────────────────────
         // Signal K calls registerWithRouter once, and it does so while the
