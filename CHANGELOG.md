@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-10-05
+
+### Added
+
+- **SHOM bathymetry, offline.** When the server is online, the SHOM digital elevation models (MNT topo-bathymétriques, 5 – 20 m on the French coast, 100 m façades; open data, Licence Ouverte) within `bathymetry.radiusNm` of the boat are downloaded from data.shom.fr, converted once to a compact grid in `<dataDir>/bathymetry/` and served as Terrarium elevation tiles referenced to chart datum (`GET /bathymetry/tiles/:z/:x/:y.png`, transparent where no survey covers). ocearo-ui 2 draws them as the seabed of its bathymetry mode. Archives can also be dropped by hand in the import folder. Extraction uses the `7z` command (`apt install p7zip-full`); no new npm dependency. Status, download, import and removal endpoints under `/bathymetry/`.
+
+### Fixed
+
+- **The anchor API answered 404 on current Signal K servers.** Signal K calls `registerWithRouter` while the asynchronous `plugin.start()` is still running, before the AnchorPlugin exists, so drop / raise / radius / reposition / status / track were never registered. They are now registered up front and resolve the current AnchorPlugin on each request (503 until it is ready).
+
 ## [1.1.0] - 2026-08-10
 
 ### Added
