@@ -14,12 +14,14 @@ class AlertAnalyzer {
         this.memory = memory;
         this.cm = cm;
         
-        // Alert severity mappings
+        // Signal K notification states, by severity
         this.severityLevels = {
+            emergency: 4,
             alarm: 3,
             warn: 2,
             alert: 1,
-            normal: 0
+            normal: 0,
+            nominal: 0
         };
         
         // Alert type to category mapping
@@ -44,7 +46,14 @@ class AlertAnalyzer {
         try {
             // Extract alert details
             const alert = this.parseNotification(notification);
-            
+
+            // Signal K keeps a notification per sensor even when all is well
+            // (an engine bus publishes dozens in state "normal"): only real
+            // alerts are worth an AI analysis, a memory entry or a voice message.
+            if (!(this.severityLevels[alert.severity] >= 1)) {
+                return null;
+            }
+
             // Check if similar alert was recently sent
             if (this.shouldSuppress(alert)) {
                 this.app.debug(`Suppressing duplicate alert: ${alert.key}`);
@@ -75,7 +84,8 @@ class AlertAnalyzer {
                 shouldSpeak: this.shouldSpeak(alert)
             };
         } catch (error) {
-            this.app.error('Error processing alert:', error);
+            // The server's logger prints only its first argument
+            this.app.error(`Error processing alert: ${error.message}`);
             return null;
         }
     }
@@ -91,8 +101,10 @@ class AlertAnalyzer {
             key: notification.path,
             type: pathParts[pathParts.length - 1],
             category,
-            message: notification.value?.message || 'Alert',
-            severity: notification.value?.state || 'normal',
+            // getNotifications() gives flat objects; the nested Signal K delta
+            // shape is still accepted
+            message: notification.message || notification.value?.message || 'Alert',
+            severity: notification.state || notification.severity || notification.value?.state || 'normal',
             value: notification.value?.value,
             timestamp: notification.timestamp || new Date().toISOString()
         };
