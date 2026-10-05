@@ -1,6 +1,6 @@
 {
   "name": "ocearo-core",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Ocearo Core — the voice of the boat for Signal K: COLREG collision watch, anchor watch, offline SHOM bathymetry, weather, engine and battery monitoring, sail coaching and logbook, spoken through local TTS with an optional local LLM",
   "main": "index.js",
   "scripts": {
