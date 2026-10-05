@@ -12,7 +12,7 @@
 
 It is the server half of **[Ocearo UI](https://github.com/laborima/ocearo-ui)**, the 3D sailing display, and works on its own with any Signal K setup.
 
-▶ **See it at sea (2:33):** [video tour in English](https://youtu.be/YGQM3UipcvU) · [en français](https://youtu.be/GkLjk23Sz8k)
+▶ **See it at sea (2:33):** [video tour in English](https://youtu.be/ZDUoifu3cdI) · [en français](https://youtu.be/gu08pE906Ms)
 
 | | |
 |---|---|

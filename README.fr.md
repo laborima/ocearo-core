@@ -12,7 +12,7 @@
 
 C'est la moitié serveur d'**[Ocearo UI](https://github.com/laborima/ocearo-ui)**, l'affichage de navigation en 3D, et il fonctionne seul avec n'importe quelle installation Signal K.
 
-▶ **En mer (2:33) :** [visite en vidéo en français](https://youtu.be/GkLjk23Sz8k) · [in English](https://youtu.be/YGQM3UipcvU)
+▶ **En mer (2:33) :** [visite en vidéo en français](https://youtu.be/gu08pE906Ms) · [in English](https://youtu.be/ZDUoifu3cdI)
 
 | | |
 |---|---|
