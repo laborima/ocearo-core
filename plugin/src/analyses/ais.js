@@ -177,14 +177,16 @@ class AISAnalyzer {
                 range: target.range,
                 bearing: target.bearing,
                 colregs: target.colregs,
-                message: this._buildAlertMessage(target)
+                message: this._buildAlertMessage(target),
             };
+            // Read aloud: decimals and units spelled out; the logbook keeps the written text
+            alert.speech = textUtils?.cleanForTTS ? textUtils.cleanForTTS(alert.message, this.cm.language || 'en') : alert.message;
             alerts.push(alert);
         }
 
         let speech = null;
         if (alerts.length > 0) {
-            speech = alerts.map(a => a.message).join('. ');
+            speech = alerts.map(a => a.speech).join('. ');
         }
 
         return {
@@ -198,9 +200,8 @@ class AISAnalyzer {
     }
 
     /**
-     * Build a spoken alert message for a collision risk target.
+     * Alert message for a collision risk target, as written (logbook, display).
      * @param {object} target  Target data
-     * @param {string} lang    Language code
      * @returns {string}       Alert message
      */
     _buildAlertMessage(target) {
@@ -211,9 +212,7 @@ class AISAnalyzer {
             rule: target.rule,
             action: this.cm.t(`ais.action.${target.action}`),
         };
-        const text = this.cm.t(target.risk === 'danger' ? 'ais.alert.danger_vessel' : 'ais.alert.caution_vessel', params);
-        // Spoken: decimals and units read naturally ("un virgule deux milles")
-        return textUtils?.cleanForTTS ? textUtils.cleanForTTS(text, this.cm.language || 'en') : text;
+        return this.cm.t(target.risk === 'danger' ? 'ais.alert.danger_vessel' : 'ais.alert.caution_vessel', params);
     }
 
     // ────────── CPA / TCPA CALCULATION ──────────

@@ -122,6 +122,8 @@ test('AIS analysis: a fishing vessel ahead, spoken with the rule and the action'
     assert.ok(result.alerts.length === 1 && result.alerts[0].mmsi === 'urn:mrn:imo:mmsi:228000001');
     assert.deepStrictEqual([result.alerts[0].role, result.alerts[0].rule, result.alerts[0].action], ['give-way', '18', 'give_way_starboard']);
     assert.ok(result.alerts[0].message.length > 0);
+    // Written for the logbook, spelled out for the voice
+    assert.ok(result.alerts[0].speech.length > 0);
     // Same situation 15 s later: within the cooldown, not repeated
     assert.strictEqual(ais.checkCollisionRisks({ navigation: self.navigation }).alerts.length, 0);
 });
