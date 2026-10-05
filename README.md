@@ -70,6 +70,13 @@ Ocearo Core goes beyond simple dashboards. It's an intelligent AI Co-pilot that:
 - Course optimisation with VMG analysis
 - Reefing suggestions based on conditions
 
+### ⚓ Collision Watch (COLREG / RIPAM)
+- CPA / TCPA for every AIS target, every 15 s
+- Who gives way under the steering and sailing rules, the same rules as the ocearo-ui display: overtaking (13), vessel hierarchy (18: sailing, fishing, restricted, from the AIS status or ship type; motor-sailing is power), two sailing vessels (12: tacks from the true wind, windward boat), head-on (14), crossing (15)
+- What to do, spoken: give way early and pass astern (16), hold course and speed, be ready, then act when the other does not (17), no stand-on vessel in restricted visibility (19)
+- Repeated at once when the required action becomes more urgent; one logbook entry per target and situation
+- An aid to the watch, never a decision: no narrow channels or traffic separation schemes (rules 9–10)
+
 ### 🚨 Smart Alerts
 - Intercepts all Signal K notifications
 - Contextual LLM explanations
@@ -97,6 +104,7 @@ plugin/
     ├── analyses/
     │   ├── alert.js          # Alert analysis
     │   ├── ais.js            # AIS collision detection
+    │   ├── colregs.js        # Right of way (COLREG / RIPAM rules 12-19)
     │   ├── meteo.js          # Weather analysis
     │   ├── sailcourse.js     # Course optimisation
     │   └── sailsettings.js   # Sail trim recommendations
@@ -144,7 +152,7 @@ AnchorPlugin ──► AnchorAlarm ──► SK notifications
 ### Prerequisites
 
 - **Signal K Server** ≥ 1.x
-- **Node.js** ≥ 18.0.0
+- **Node.js** ≥ 20
 - **Ollama** (optional, for LLM) — [Install Ollama](https://ollama.ai)
 - **Piper TTS** (optional, for voice) — [Install Piper](https://github.com/rhasspy/piper)
 
@@ -240,7 +248,7 @@ All endpoints are under `/plugins/ocearo-core/`. Rate limits apply (120 req/min 
 |----------|--------|-------------|
 | `/health` | GET | Component health check |
 | `/status` | GET | Full system status (mode, weather, anchor, logbook backend) |
-| `/analyze` | POST | Trigger AI analysis (`weather`, `sail`, `alerts`, `ais`, `status`, `logbook`, `route`) |
+| `/analyze` | POST | Trigger an analysis (`weather`, `sail`, `alerts`, `ais`, `status`, `logbook`, `route`, `racing`, `briefing`); works without an LLM, which only adds the synthesis |
 | `/speak` | POST | Speak text via TTS (`{ text, priority }`) |
 | `/mode` | POST | Change operating mode (`{ mode }`) |
 

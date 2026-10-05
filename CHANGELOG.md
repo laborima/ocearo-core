@@ -6,10 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **COLREG / RIPAM rules in the collision watch.** Encounters were classified from the relative bearing alone. The watch now works out who gives way with the same rules as the ocearo-ui display — 13 overtaking, 18 vessel hierarchy (sailing, fishing, restricted from the AIS status or ship type; a motor-sailing yacht is power-driven), 12 two sailing vessels (tacks from the true wind, windward boat), 14 head-on, 15 crossing — plus 17 (hold on, be ready, act when collision cannot be avoided by the give-way vessel alone) and 19 (no stand-on vessel in restricted visibility). Spoken alerts name our role, the rule and the action, and are repeated as soon as the action becomes more urgent. The LLM is given the established rules instead of being asked to work them out.
+- **Briefing without an LLM**: the situation report speaks the facts (wind, sea, barometer, tide, traffic and our role towards the closest vessel) when no model is available.
+
 - **SHOM bathymetry, offline.** When the server is online, the SHOM digital elevation models (MNT topo-bathymétriques, 5 – 20 m on the French coast, 100 m façades; open data, Licence Ouverte) within `bathymetry.radiusNm` of the boat are downloaded from data.shom.fr, converted once to a compact grid in `<dataDir>/bathymetry/` and served as Terrarium elevation tiles referenced to chart datum (`GET /bathymetry/tiles/:z/:x/:y.png`, transparent where no survey covers). ocearo-ui 2 draws them as the seabed of its bathymetry mode. Archives can also be dropped by hand in the import folder. Extraction uses the `7z` command (`apt install p7zip-full`); no new npm dependency. Status, download, import and removal endpoints under `/bathymetry/`.
 
 ### Fixed
 
+- **No battery or engine failure was ever detected**: the branches were read as Signal K nodes and compared as objects. Failure advice is now spoken in volts, °C, bar and hours — it used to be the raw locale key.
+- **Weather**: gusts were never counted (wrong field name), wind against tide ignored the directions of wind and stream, the sea state was one Douglas step too low, a missing wind direction became a northerly, a position at longitude 0 had no forecast, and the pressure alert gave a 3-hour change as hPa/h.
+- **Sail and course analyses** received no heel and an invented wind direction when it was unknown; **racing** read the next waypoint as a node and spoke 'NaN°'.
+- **A briefing or an AIS request silenced the collision watch** about the targets it mentioned for five minutes; the briefing reused the first weather analysis of the session (Force 0) forever.
+- AIS logbook entries shared one cooldown for all targets; 'Navire inconnu' and the racing manoeuvre words were hard-coded in French; racing and route messages were missing from the locales.
+- `npm run lint` failed (ESLint 9+ no longer reads `.eslintrc.json`): flat config, lint clean.
 - **The anchor API answered 404 on current Signal K servers.** Signal K calls `registerWithRouter` while the asynchronous `plugin.start()` is still running, before the AnchorPlugin exists, so drop / raise / radius / reposition / status / track were never registered. They are now registered up front and resolve the current AnchorPlugin on each request (503 until it is ready).
 
 ## [1.1.0] - 2026-08-10
