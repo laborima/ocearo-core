@@ -274,7 +274,16 @@ class LogbookManager {
             'brain_memory': 'Memory'
         };
 
-        const label = typeLabels[analysisType] || analysisType;
+        // Entries are read on board: in the plugin's language
+        const typeLabelsFr = {
+            'weather': 'Météo', 'navigation': 'Navigation', 'performance': 'Performance', 'safety': 'Sécurité',
+            'route': 'Route', 'arrival': 'Arrivée', 'fuel': 'Carburant', 'maintenance': 'Maintenance',
+            'anchor': 'Mouillage', 'collision': 'Abordage', 'startup_analysis': 'Briefing', 'startup': 'Démarrage',
+            'shutdown': 'Arrêt', 'hourly_entry': 'Point horaire', 'mode_change': 'Mode', 'briefing': 'Briefing',
+            'logbook_review': 'Revue du journal', 'racing': 'Régate', 'alert': 'Alerte', 'brain_memory': 'Mémoire'
+        };
+        const labels = (this.config.language || 'fr') === 'fr' ? typeLabelsFr : typeLabels;   // same default as ConfigManager
+        const label = labels[analysisType] || typeLabels[analysisType] || analysisType;
         
         // Truncate summary if too long for logbook text
         const truncatedSummary = summary.length > 200 
