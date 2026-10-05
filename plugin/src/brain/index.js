@@ -1816,7 +1816,9 @@ class OrchestratorBrain {
             const weather = analysisResults.weather;
             if (weather.speech) {
                 parts.push(typeof weather.speech === 'string' ? weather.speech : String(weather.speech || ''));
-                summary.push(`${this.cm.t('reports.weather')}: ${weather.assessment?.windStrength || 'ok'}`);
+                const strength = weather.assessment?.windStrength;
+                const strengthText = strength ? this.cm.t(`weather.strength.${strength}`) : null;
+                summary.push(`${this.cm.t('reports.weather')}: ${strengthText && strengthText !== `weather.strength.${strength}` ? strengthText.toLowerCase() : (strength || 'ok')}`);
             }
         }
         

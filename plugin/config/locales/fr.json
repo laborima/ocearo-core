@@ -67,6 +67,7 @@
       "12": "Ouragan"
     },
     "strength": {
+      "calm": "Calme",
       "light": "Léger",
       "moderate": "Modéré",
       "fresh": "Frais",

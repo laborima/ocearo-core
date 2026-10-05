@@ -67,6 +67,7 @@
       "12": "Hurricane"
     },
     "strength": {
+      "calm": "Calm",
       "light": "Light",
       "moderate": "Moderate",
       "fresh": "Fresh",
