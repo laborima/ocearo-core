@@ -252,11 +252,10 @@ class RacingAnalyzer {
         }
 
         if (bestOption && (bestOption.type.includes('tack') || bestOption.type.includes('gybe'))) {
-            const action = bestOption.type.includes('tack') ? 'virement' : 'empannage';
+            const manoeuvre = bestOption.type.includes('tack') ? 'tack' : 'gybe';
             advice.push({
                 type: 'manoeuvre', priority: 'high',
-                message: this.cm.t('racing.advice.manoeuvre', { action, heading: bestOption.heading })
-                    || `${action.charAt(0).toUpperCase() + action.slice(1)} recommandé. Cap cible : ${bestOption.heading}°.`
+                message: this.cm.t(`racing.advice.${manoeuvre}`, { heading: bestOption.heading })
             });
         }
 

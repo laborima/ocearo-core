@@ -336,5 +336,32 @@
     "degrees": "degrés",
     "hours": "heures",
     "minutes": "minutes"
+  },
+  "failure": {
+    "advice": {
+      "low_voltage": "Batterie {system} basse : {value} volts. Réduisez la consommation ou lancez une charge.",
+      "voltage_dropping": "Tension de la batterie {system} en baisse : {value} volts.",
+      "rapid_discharge": "Batterie {system} en décharge rapide : {value} ampères. Vérifiez ce qui consomme.",
+      "critical_time_to_empty": "Batterie {system} : {value} heures d'autonomie à cette consommation.",
+      "overheating": "Surchauffe moteur {system} : {value} °C. Réduisez le régime, vérifiez la circulation d'eau de refroidissement.",
+      "temp_rising": "Température moteur {system} en hausse : {value} °C.",
+      "low_oil_pressure": "Pression d'huile moteur {system} basse : {value} bar. Arrêtez le moteur si elle continue de baisser.",
+      "service_due_soon": "Moteur {system} : entretien à prévoir, {value} heures depuis le dernier."
+    }
+  },
+  "racing": {
+    "advice": {
+      "low_efficiency": "Performance polaire faible ({eff} %). Vérifiez les réglages de voiles.",
+      "pinching": "Trop serré : abattez légèrement pour relancer.",
+      "dead_run": "Vent arrière sec. Meilleure VMG à {angle}° du vent réel : tirez des bords de largue.",
+      "tack": "Virement recommandé. Cap cible {heading}°.",
+      "gybe": "Empannage recommandé. Cap cible {heading}°.",
+      "strong_wind": "Vent fort, {speed} nœuds. Vérifiez les ris et la stabilité.",
+      "approaching_mark": "Approche de la marque. Préparez le virement ou l'empannage et anticipez le contournement."
+    }
+  },
+  "route": {
+    "no_destination": "Aucune destination définie.",
+    "no_position": "Position actuelle inconnue."
   }
 }

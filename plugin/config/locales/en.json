@@ -336,5 +336,32 @@
     "degrees": "degrees",
     "hours": "hours",
     "minutes": "minutes"
+  },
+  "failure": {
+    "advice": {
+      "low_voltage": "Battery {system} low: {value} volts. Reduce consumption or start charging.",
+      "voltage_dropping": "Battery {system} voltage dropping: {value} volts.",
+      "rapid_discharge": "Battery {system} discharging fast: {value} amps. Check what is drawing power.",
+      "critical_time_to_empty": "Battery {system}: {value} hours left at this consumption.",
+      "overheating": "Engine {system} overheating: {value} °C. Reduce revs, check the cooling water flow.",
+      "temp_rising": "Engine {system} temperature rising: {value} °C.",
+      "low_oil_pressure": "Engine {system} oil pressure low: {value} bar. Stop the engine if it keeps falling.",
+      "service_due_soon": "Engine {system}: service due, {value} hours since the last one."
+    }
+  },
+  "racing": {
+    "advice": {
+      "low_efficiency": "Polar performance low ({eff}%). Check the sail trim.",
+      "pinching": "Pinching: bear away a little to build speed.",
+      "dead_run": "Dead run. Best downwind VMG at {angle}° of true wind: gybe downwind.",
+      "tack": "Tack recommended. Target heading {heading}°.",
+      "gybe": "Gybe recommended. Target heading {heading}°.",
+      "strong_wind": "Strong wind, {speed} knots. Check reefs and stability.",
+      "approaching_mark": "Approaching the mark. Prepare the tack or gybe and plan the rounding."
+    }
+  },
+  "route": {
+    "no_destination": "No destination set.",
+    "no_position": "Current position unknown."
   }
 }

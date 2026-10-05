@@ -380,9 +380,9 @@ class SignalKDataProvider {
           }
         },
         electrical: {
-          batteries: this._getSelfPath('electrical.batteries') || {}
+          batteries: this._getSelfBranch('electrical.batteries') || {}
         },
-        propulsion: this._getSelfPath('propulsion') || {}
+        propulsion: this._getSelfBranch('propulsion') || {}
       };
 
       // Flat, display-unit fields expected by the analysers (speed in knots, angles in
@@ -713,6 +713,34 @@ class SignalKDataProvider {
       return node.value;
     }
     return node;
+  }
+
+  /**
+   * A Signal K branch with every leaf reduced to its value: getSelfPath on
+   * a branch (electrical.batteries, propulsion) returns nodes such as
+   * { value, $source, timestamp, meta }, which compare as objects.
+   */
+  _unwrapDeep(node) {
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) return node;
+    if ('value' in node && ('$source' in node || 'timestamp' in node || 'meta' in node || Object.keys(node).length === 1)) {
+      return node.value;
+    }
+    const out = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'meta' || k === '$source' || k === 'timestamp' || k === 'pgn' || k === 'sentence') continue;
+      out[k] = this._unwrapDeep(v);
+    }
+    return out;
+  }
+
+  _getSelfBranch(path) {
+    try {
+      const node = typeof this.app?.getSelfPath === 'function' ? this.app.getSelfPath(path) : undefined;
+      return node ? this._unwrapDeep(node) : undefined;
+    } catch (err) {
+      this._error('Error reading self branch', path, err);
+      return undefined;
+    }
   }
 
   _getSelfPath(path) {

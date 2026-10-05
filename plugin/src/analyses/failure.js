@@ -131,14 +131,39 @@ class FailurePredictor {
         }
     }
 
+    /** Spoken value in display units (Signal K is SI: K, Pa, s) */
+    _displayValue(type, value) {
+        if (!Number.isFinite(value)) return '?';
+        switch (type) {
+            case 'overheating':
+            case 'temp_rising':
+                return Math.round(value - 273.15);
+            case 'low_oil_pressure':
+                return (value / 100000).toFixed(1);
+            case 'critical_time_to_empty':
+                return (value / 3600).toFixed(1);
+            case 'service_due_soon':
+                return Math.round(value);
+            default:
+                return Math.round(value * 10) / 10;
+        }
+    }
+
+    _adviceMessage(item, fallback) {
+        const key = `failure.advice.${item.type}`;
+        const system = String(item.system).replace(/^(battery|engine)_/, '');
+        const text = this.cm.t(key, { system, value: this._displayValue(item.type, item.value) });
+        return text && text !== key ? text : fallback;
+    }
+
     _generateExpertAdvice(issues, warnings) {
         const advice = [];
-        
+
         issues.forEach(issue => {
             advice.push({
                 type: 'critical_failure_risk',
                 priority: 'critical',
-                message: this.cm.t(`failure.advice.${issue.type}`) || `Critical issue detected on ${issue.system}: ${issue.type}`
+                message: this._adviceMessage(issue, `Critical issue detected on ${issue.system}: ${issue.type}`)
             });
         });
 
@@ -146,7 +171,7 @@ class FailurePredictor {
             advice.push({
                 type: 'preventive_maintenance',
                 priority: 'high',
-                message: this.cm.t(`failure.advice.${warning.type}`) || `Warning on ${warning.system}: ${warning.type}. Check system.`
+                message: this._adviceMessage(warning, `Warning on ${warning.system}: ${warning.type}. Check system.`)
             });
         });
 

@@ -1744,9 +1744,11 @@ class OrchestratorBrain {
             if (electrical && electrical.batteries) {
                 for (const [batteryId, batteryData] of Object.entries(electrical.batteries)) {
                     if (batteryData) {
-                        const voltage = batteryData.voltage?.value;
-                        const current = batteryData.current?.value;
-                        const capacity = batteryData.capacity?.stateOfCharge?.value;
+                        // Plain values from the provider (older shapes kept { value })
+                        const v = (x) => (x && typeof x === 'object' && 'value' in x ? x.value : x);
+                        const voltage = v(batteryData.voltage);
+                        const current = v(batteryData.current);
+                        const capacity = v(batteryData.capacity?.stateOfCharge);
                         
                         if (voltage !== undefined || capacity !== undefined) {
                             batteries[batteryId] = {
