@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 - **Sail and course analyses** received no heel and an invented wind direction when it was unknown; **racing** read the next waypoint as a node and spoke 'NaN°'.
 - **A briefing or an AIS request silenced the collision watch** about the targets it mentioned for five minutes; the briefing reused the first weather analysis of the session (Force 0) forever.
 - AIS logbook entries shared one cooldown for all targets; 'Navire inconnu' and the racing manoeuvre words were hard-coded in French; racing and route messages were missing from the locales.
+- **A critical "low oil pressure" risk with the engine stopped** (0 bar is normal then), written to the logbook every minute as "System Failure Risk Detected": oil pressure is checked with the engine running only, and a failure risk is logged once per situation, with the advice as its text.
+- AIS alerts were written to the logbook in their spoken form ("0 point 38 miles").
 - `npm run lint` failed (ESLint 9+ no longer reads `.eslintrc.json`): flat config, lint clean.
 - **The anchor API answered 404 on current Signal K servers.** Signal K calls `registerWithRouter` while the asynchronous `plugin.start()` is still running, before the AnchorPlugin exists, so drop / raise / radius / reposition / status / track were never registered. They are now registered up front and resolve the current AnchorPlugin on each request (503 until it is ready).
 
