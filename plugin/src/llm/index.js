@@ -62,6 +62,12 @@ class LLMModule {
         return this.config.language || this.cm?.language || 'en';
     }
 
+    /** Translated label for a state key, or the key itself when untranslated */
+    _label(key, fallback) {
+        const v = this.cm?.t?.(key);
+        return v && v !== key ? v : fallback;
+    }
+
     /**
      * Start the local Ollama service if it is not listening.
      *
@@ -367,17 +373,20 @@ class LLMModule {
         let wind = fr
             ? `Vent ${current.windSpeed ?? '?'} nœuds du ${cardinal} (${current.windDirection ?? '?'} degrés)`
             : `Wind ${current.windSpeed ?? '?'} knots from ${cardinal} (${current.windDirection ?? '?'} degrees)`;
-        if (current.gustSpeed) wind += fr ? `, rafales ${current.gustSpeed} nœuds` : `, gusts ${current.gustSpeed} knots`;
+        const gust = current.windGust ?? current.gustSpeed;
+        if (Number.isFinite(gust)) wind += fr ? `, rafales ${Math.round(gust)} nœuds` : `, gusts ${Math.round(gust)} knots`;
         if (assessment.beaufort?.force != null) wind += fr ? `, force ${assessment.beaufort.force}` : `, force ${assessment.beaufort.force}`;
         L.push(wind);
 
         if (current.waveHeight != null) {
-            L.push(fr ? `Mer ${current.waveHeight} mètres${assessment.seaState ? ` (${assessment.seaState})` : ''}`
-                      : `Sea ${current.waveHeight} meters${assessment.seaState ? ` (${assessment.seaState})` : ''}`);
+            const sea = assessment.seaState ? ` (${this._label(`weather.sea_state.${assessment.seaState}`, assessment.seaState)})` : '';
+            L.push(fr ? `Mer ${current.waveHeight} mètres${sea}` : `Sea ${current.waveHeight} meters${sea}`);
         }
         if (current.pressure != null) {
             const trend = assessment.pressure?.trend;
-            const trendTxt = trend ? (fr ? `, tendance ${trend}` : `, trend ${trend}`) : '';
+            const trendTxt = trend && trend !== 'unknown'
+                ? (fr ? `, tendance ${this._label(`weather.pressure.${trend}`, trend)}` : `, trend ${this._label(`weather.pressure.${trend}`, trend)}`)
+                : '';
             L.push(fr ? `Baromètre ${current.pressure} hectopascals${trendTxt}` : `Barometer ${current.pressure} hectopascals${trendTxt}`);
         }
         if (assessment.squallRisk && assessment.squallRisk !== 'low') {

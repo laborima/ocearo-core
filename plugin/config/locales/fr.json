@@ -75,14 +75,17 @@
       "gale": "Coup de vent"
     },
     "sea_state": {
-      "glassy": "Mer d'huile",
-      "calm": "Calme",
-      "smooth": "Peu agitée",
-      "slight": "Agitée",
-      "moderate": "Modérée",
-      "rough": "Forte",
-      "very_rough": "Très forte",
-      "high": "Grosse"
+      "glassy": "calme (mer d'huile)",
+      "rippled": "calme ridée",
+      "smooth": "belle",
+      "slight": "peu agitée",
+      "moderate": "agitée",
+      "rough": "forte",
+      "very_rough": "très forte",
+      "high": "grosse",
+      "very_high": "très grosse",
+      "phenomenal": "énorme",
+      "calm": "calme"
     },
     "trend": {
       "improving": "En amélioration",
@@ -95,13 +98,15 @@
       "rising": "En hausse",
       "rising_fast": "En hausse rapide",
       "falling": "En baisse",
-      "falling_fast": "En baisse rapide — dépression en approche"
+      "falling_fast": "En baisse rapide — dépression en approche",
+      "rising_slowly": "En légère hausse",
+      "falling_slowly": "En légère baisse"
     },
     "alerts": {
       "high_wind": "Alerte : vent fort à {speed} nœuds",
       "strong_wind": "Attention : vent soutenu à {speed} nœuds",
       "high_waves": "Alerte : vagues de {height} mètres",
-      "pressure_falling_fast": "Baromètre en chute rapide ({rate} hPa/h). Préparez-vous à une dégradation.",
+      "pressure_falling_fast": "Baromètre en chute rapide ({rate} hPa en 3 heures). Préparez-vous à une dégradation.",
       "squall_risk": "Risque de grain élevé : rafales à {gustFactor}% du vent moyen, pression en baisse.",
       "wind_against_tide": "Vent contre courant ! Clapot court et raide à prévoir."
     },

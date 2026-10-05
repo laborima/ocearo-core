@@ -131,7 +131,9 @@ class MarineWeatherDataProvider {
      * @returns {Array|null} Array of hourly forecast objects
      */
     async _fetchForecast(position) {
-        if (!position?.latitude || !position?.longitude) {
+        // Number.isFinite, not truthiness: longitude 0 (Greenwich, the eastern
+        // Channel) is a valid position
+        if (!Number.isFinite(position?.latitude) || !Number.isFinite(position?.longitude)) {
             this.app.debug('No position available for weather forecast');
             return null;
         }
@@ -179,8 +181,11 @@ class MarineWeatherDataProvider {
 
                 if (!response.ok) {
                     if (response.status === 400 || response.status === 404) {
+                        // No weather provider installed: ask again in 5 min,
+                        // not on every analysis cycle
                         this.app.debug('Weather API not available on this server');
-                        return null;
+                        this._backoffUntil = Date.now() + 5 * 60_000;
+                        return this._forecastCache?.data ?? null;
                     }
                     throw new Error(`Weather API HTTP ${response.status}`);
                 }
@@ -270,6 +275,15 @@ class MarineWeatherDataProvider {
             entries.push(entry);
         }
 
+        // Chronological, from the current hour: the first entry stands for
+        // "now" when there is no sensor (an API may return the past hour first)
+        const hourAgo = Date.now() - 60 * 60 * 1000;
+        const dated = entries.filter(e => Number.isFinite(Date.parse(e.date)));
+        if (dated.length === entries.length && entries.length > 0) {
+            entries.sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+            const upcoming = entries.filter(e => Date.parse(e.date) >= hourAgo);
+            if (upcoming.length > 0) return upcoming;
+        }
         return entries;
     }
 

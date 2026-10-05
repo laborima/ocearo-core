@@ -107,7 +107,8 @@ class MeteoAnalyzer {
     assessConditions(weatherData, tideData, vesselData) {
         const current = weatherData?.current || {};
         const windSpeed = current.windSpeed || 0;
-        const gustSpeed = current.gustSpeed || 0;
+        // The weather provider reports gusts as windGust
+        const gustSpeed = current.windGust ?? current.gustSpeed ?? 0;
 
         const beaufort = this.getBeaufort(windSpeed);
         const gustFactor = windSpeed > 0 ? gustSpeed / windSpeed : 1;
@@ -172,8 +173,11 @@ class MeteoAnalyzer {
             });
         }
 
-        if (tideData?.current) {
-            const tideAssessment = this.assessTideImpact(tideData, vesselData, current);
+        // Wind against tide needs the current's direction: from the tidal
+        // current published in Signal K (set and drift), whatever the source
+        const stream = this._readCurrent();
+        if (stream || tideData?.current) {
+            const tideAssessment = this.assessTideImpact(tideData || {}, vesselData, current, stream);
             assessment.tide = tideAssessment;
             if (tideAssessment.windAgainstTide) {
                 assessment.windAgainstTide = tideAssessment.windAgainstTide;
@@ -339,13 +343,16 @@ class MeteoAnalyzer {
      * @returns {string} Sea state category
      */
     assessSeaState(waveHeight = 0) {
-        if (waveHeight < 0.1) return 'glassy';
-        if (waveHeight < 0.5) return 'calm';
-        if (waveHeight < 1.25) return 'smooth';
-        if (waveHeight < 2.5) return 'slight';
-        if (waveHeight < 4) return 'moderate';
-        if (waveHeight < 6) return 'rough';
-        if (waveHeight < 9) return 'very_rough';
+        // WMO / Douglas sea state from the significant wave height
+        if (waveHeight <= 0) return 'glassy';
+        if (waveHeight < 0.1) return 'rippled';
+        if (waveHeight < 0.5) return 'smooth';
+        if (waveHeight < 1.25) return 'slight';
+        if (waveHeight < 2.5) return 'moderate';
+        if (waveHeight < 4) return 'rough';
+        if (waveHeight < 6) return 'very_rough';
+        if (waveHeight < 9) return 'high';
+        if (waveHeight < 14) return 'very_high';
         return 'phenomenal';
     }
 
@@ -355,11 +362,12 @@ class MeteoAnalyzer {
      * Assess sailing conditions: point of sail, VMG, efficiency.
      */
     assessSailingConditions(current, vesselData) {
-        if (vesselData.heading === undefined || vesselData.speed === undefined) {
+        if (!Number.isFinite(vesselData.heading) || !Number.isFinite(vesselData.speed)
+            || !Number.isFinite(current.windDirection)) {
             return { twa: null, vmg: null, pointOfSail: 'unknown', efficiency: 'unknown' };
         }
 
-        const twa = this.calculateTWA(vesselData.heading, current.windDirection ?? 0);
+        const twa = this.calculateTWA(vesselData.heading, current.windDirection);
         const vmg = vesselData.speed * Math.cos((twa * Math.PI) / 180);
 
         return {
@@ -447,7 +455,19 @@ class MeteoAnalyzer {
     /**
      * Assess tide impact including wind-against-tide danger.
      */
-    assessTideImpact(tideData, vesselData, currentWeather) {
+    /** Tidal current from Signal K: { setTrue (deg, towards), drift (knots) } or null */
+    _readCurrent() {
+        try {
+            const raw = this.app.getSelfPath?.('environment.current');
+            const v = raw && typeof raw === 'object' && 'value' in raw ? raw.value : raw;
+            if (v && Number.isFinite(v.setTrue) && Number.isFinite(v.drift)) {
+                return { setTrue: v.setTrue * 180 / Math.PI, drift: v.drift * 1.94384 };
+            }
+        } catch { /* optional */ }
+        return null;
+    }
+
+    assessTideImpact(tideData, vesselData, currentWeather, stream = null) {
         const result = {
             height: tideData.current?.height ?? null,
             tendency: tideData.current?.tendency ?? 'unknown',
@@ -472,12 +492,17 @@ class MeteoAnalyzer {
             result.impact.navigation.push('spring_tide');
         }
 
-        if (currentWeather?.windDirection !== undefined && tideData.current?.tendency) {
+        if (stream && stream.drift > 0.5) {
+            result.impact.current = 'strong';
+            if (!result.impact.navigation.includes('strong_current')) result.impact.navigation.push('strong_current');
+        }
+
+        if (Number.isFinite(currentWeather?.windDirection) && stream) {
             result.windAgainstTide = this._assessWindAgainstTide(
                 currentWeather.windSpeed || 0,
                 currentWeather.windDirection,
-                tideData.current.tendency,
-                tideData.current.rate || 0
+                stream.setTrue,
+                stream.drift
             );
         }
 
@@ -487,17 +512,23 @@ class MeteoAnalyzer {
     /**
      * Wind blowing against tidal current creates steep, dangerous seas.
      */
-    _assessWindAgainstTide(windSpeed, windDir, tideTendency, tideRate) {
-        const danger = windSpeed > 15 && tideRate > 0.3;
+    _assessWindAgainstTide(windSpeed, windDir, currentSet, currentDrift) {
+        // The wind blows towards windDir + 180; the stream flows towards its
+        // set. Steep seas build when they run against each other.
+        const windTowards = (windDir + 180) % 360;
+        const angle = Math.abs((((currentSet - windTowards) % 360) + 540) % 360 - 180);
+        const opposed = angle > 120;
+        const danger = opposed && windSpeed > 15 && currentDrift > 1;
         let severity = 'none';
-        if (danger && windSpeed > 25) severity = 'high';
+        if (danger && (windSpeed > 25 || currentDrift > 2.5)) severity = 'high';
         else if (danger) severity = 'moderate';
 
         return {
             danger,
             severity,
             windSpeed,
-            tideRate,
+            tideRate: currentDrift,
+            angle: Math.round(angle),
             description: danger
                 ? this.cm.t('weather.alerts.wind_against_tide')
                 : this.cm.t('weather.advice.light_general')
@@ -629,7 +660,7 @@ class MeteoAnalyzer {
                 message: this.cm.t('weather.advice.fresh_warning') });
         }
 
-        if (assessment.seaState === 'rough' || assessment.seaState === 'very_rough') {
+        if (['rough', 'very_rough', 'high', 'very_high', 'phenomenal'].includes(assessment.seaState)) {
             recommendations.push({ type: 'course_change', priority: 'medium',
                 message: this.cm.t('weather.advice.strong_warning') });
         }

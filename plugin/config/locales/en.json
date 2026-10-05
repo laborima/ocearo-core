@@ -75,14 +75,17 @@
       "gale": "Gale"
     },
     "sea_state": {
-      "glassy": "Glassy",
-      "calm": "Calm",
-      "smooth": "Smooth",
-      "slight": "Slight",
-      "moderate": "Moderate",
-      "rough": "Rough",
-      "very_rough": "Very rough",
-      "high": "High"
+      "glassy": "calm (glassy)",
+      "rippled": "calm (rippled)",
+      "smooth": "smooth",
+      "slight": "slight",
+      "moderate": "moderate",
+      "rough": "rough",
+      "very_rough": "very rough",
+      "high": "high",
+      "very_high": "very high",
+      "phenomenal": "phenomenal",
+      "calm": "calm"
     },
     "trend": {
       "improving": "Improving",
@@ -95,13 +98,15 @@
       "rising": "Rising",
       "rising_fast": "Rising fast",
       "falling": "Falling",
-      "falling_fast": "Falling fast — low pressure approaching"
+      "falling_fast": "Falling fast — low pressure approaching",
+      "rising_slowly": "Rising slowly",
+      "falling_slowly": "Falling slowly"
     },
     "alerts": {
       "high_wind": "Warning: high wind speed {speed} knots",
       "strong_wind": "Caution: strong wind {speed} knots",
       "high_waves": "Warning: wave height {height} meters",
-      "pressure_falling_fast": "Barometer falling fast ({rate} hPa/h). Prepare for deterioration.",
+      "pressure_falling_fast": "Barometer falling fast ({rate} hPa in 3 hours). Prepare for worsening weather.",
       "squall_risk": "High squall risk: gusts at {gustFactor}% of mean wind, pressure falling.",
       "wind_against_tide": "Wind against tide! Expect short, steep chop."
     },
