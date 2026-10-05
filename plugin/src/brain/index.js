@@ -550,13 +550,19 @@ class OrchestratorBrain {
                     this.voice.speak(result.analysis.speech, { priority: 'high' });
                 }
 
-                // Log failure risks to logbook
-                await this.logAnalysisToLogbook('maintenance', {
-                    summary: 'System Failure Risk Detected',
-                    confidence: 0.9,
-                    issues: result.issues,
-                    warnings: result.warnings
-                });
+                // Log failure risks to logbook: once per situation (this check
+                // runs every minute), with the advice itself as the text
+                const situation = [...result.issues, ...(result.warnings || [])].map(i => `${i.system}:${i.type}`).sort().join(',');
+                if (situation !== this._failureLogKey || Date.now() - (this._failureLogAt || 0) > 30 * 60 * 1000) {
+                    this._failureLogKey = situation;
+                    this._failureLogAt = Date.now();
+                    await this.logAnalysisToLogbook('maintenance', {
+                        summary: (result.expertAdvice || []).map(a => a.message).join(' ') || 'System failure risk',
+                        confidence: 0.9,
+                        issues: result.issues,
+                        warnings: result.warnings
+                    });
+                }
 
                 // Store in memory
                 this.memoryManager.addAlert({

@@ -116,8 +116,9 @@ class FailurePredictor {
                 }
             }
 
-            // Oil pressure check
-            if (engine.oilPressure !== undefined && engine.oilPressure < this.thresholds.engine.minOilPressure) {
+            // Oil pressure check: no pressure is normal with the engine stopped
+            const running = Number(engine.revolutions) > 0 || ['started', 'running'].includes(engine.state);
+            if (running && engine.oilPressure !== undefined && engine.oilPressure < this.thresholds.engine.minOilPressure) {
                 issues.push({ system: `engine_${id}`, type: 'low_oil_pressure', value: engine.oilPressure });
             }
 
