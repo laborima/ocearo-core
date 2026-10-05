@@ -12,6 +12,8 @@
 
 It is the server half of **[Ocearo UI](https://github.com/laborima/ocearo-ui)**, the 3D sailing display, and works on its own with any Signal K setup.
 
+▶ **See it at sea (2:33):** [video tour in English](https://youtu.be/YGQM3UipcvU) · [en français](https://youtu.be/GkLjk23Sz8k)
+
 | | |
 |---|---|
 | ![We must give way to a fishing vessel](https://raw.githubusercontent.com/laborima/ocearo-ui/main/docs/screenshots/colregs.jpg) | ![Anchor watch with the swing track](https://raw.githubusercontent.com/laborima/ocearo-ui/main/docs/screenshots/anchor.jpg) |
