@@ -13,6 +13,7 @@
  */
 
 const colregs = require('./colregs');
+const { textUtils } = require('../common');
 
 /** Metres per nautical mile */
 const NM = 1852;
@@ -210,7 +211,9 @@ class AISAnalyzer {
             rule: target.rule,
             action: this.cm.t(`ais.action.${target.action}`),
         };
-        return this.cm.t(target.risk === 'danger' ? 'ais.alert.danger_vessel' : 'ais.alert.caution_vessel', params);
+        const text = this.cm.t(target.risk === 'danger' ? 'ais.alert.danger_vessel' : 'ais.alert.caution_vessel', params);
+        // Spoken: decimals and units read naturally ("un virgule deux milles")
+        return textUtils?.cleanForTTS ? textUtils.cleanForTTS(text, this.cm.language || 'en') : text;
     }
 
     // ────────── CPA / TCPA CALCULATION ──────────

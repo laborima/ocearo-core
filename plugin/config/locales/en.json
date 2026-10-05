@@ -85,7 +85,8 @@
       "high": "high",
       "very_high": "very high",
       "phenomenal": "phenomenal",
-      "calm": "calm"
+      "calm": "calm",
+      "unknown": "unknown"
     },
     "trend": {
       "improving": "Improving",
@@ -120,7 +121,9 @@
       "pressure_dropping": "Barometer falling. Deterioration likely in 6-12h. Anticipate reefing.",
       "weather_window": "Favorable weather window: {hours}h of stable conditions expected.",
       "squall_preparation": "Squall approaching. Take a precautionary reef. Hand ready to ease sheets."
-    }
+    },
+    "current_no_waves": "Current conditions: wind {windSpeed} knots from {windDir}",
+    "direction_unknown": "an unknown direction"
   },
   "sail": {
     "point_of_sail": {

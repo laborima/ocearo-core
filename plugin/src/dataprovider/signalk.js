@@ -548,7 +548,8 @@ class SignalKDataProvider {
   getCourseData() {
     try {
       // Primary: Course Provider nextPoint
-      const nextPoint = this._getSelfPath('navigation.courseGreatCircle.nextPoint');
+      // Branches: unwrap every leaf (nextPoint.position is itself a node)
+      const nextPoint = this._getSelfBranch('navigation.courseGreatCircle.nextPoint');
       const ownPosition = this._getSelfPath(skPaths.navigation.position);
 
       if (nextPoint && nextPoint.position) {
@@ -569,7 +570,7 @@ class SignalKDataProvider {
       }
 
       // Fallback: currentRoute waypoints
-      const waypoints = this._getSelfPath('navigation.currentRoute.waypoints');
+      const waypoints = this._getSelfBranch('navigation.currentRoute.waypoints');
       const activeIdx = this._getSelfPath('navigation.currentRoute.activeWaypointIndex');
 
       if (Array.isArray(waypoints) && waypoints.length > 0) {

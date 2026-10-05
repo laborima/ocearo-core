@@ -589,10 +589,27 @@ class LLMModule {
      */
     buildBriefingPrompt(situation = {}) {
         const fr = this._lang === 'fr';
+        const ask = fr
+            ? `\n\nFais un point de situation de skipper: synthétise l'état actuel, le risque principal à surveiller dans les prochaines heures, et le conseil prioritaire. Croise les paramètres entre eux. Reste concret et naturel.`
+            : `\n\nGive a skipper's situation report: synthesise the current state, the main risk to watch over the next few hours, and the priority advice. Connect the parameters. Keep it concrete and natural.`;
+        return this.buildBriefingFacts(situation) + ask;
+    }
+
+    /**
+     * The facts of a situation briefing, one short sentence each: the LLM's
+     * input, and what is spoken when no LLM is available.
+     * @param {object} situation from the brain's buildSituation()
+     * @returns {string}
+     */
+    buildBriefingFacts(situation = {}) {
+        const fr = this._lang === 'fr';
         const s = situation;
         const L = [];
 
-        if (s.mode) L.push(`Mode: ${s.mode}`);
+        if (s.mode) {
+            const mode = this._label(`mode.${s.mode}`, s.mode);
+            L.push(fr ? `Mode : ${mode}` : `Mode: ${mode}`);
+        }
 
         if (s.vessel) {
             const v = s.vessel;
@@ -612,9 +629,13 @@ class LLMModule {
         if (s.weather) {
             const wx = s.weather;
             if (wx.beaufortForce != null) L.push(fr ? `Force ${wx.beaufortForce}` : `Force ${wx.beaufortForce}`);
-            if (wx.waveHeight != null) L.push(fr ? `Mer ${wx.waveHeight} mètres${wx.seaState ? ` (${wx.seaState})` : ''}` : `Sea ${wx.waveHeight} meters${wx.seaState ? ` (${wx.seaState})` : ''}`);
-            if (wx.pressure != null) L.push(fr ? `Baromètre ${wx.pressure} hectopascals${wx.pressureTrend ? `, ${wx.pressureTrend}` : ''}` : `Barometer ${wx.pressure} hectopascals${wx.pressureTrend ? `, ${wx.pressureTrend}` : ''}`);
-            if (wx.squallRisk && wx.squallRisk !== 'low') L.push(fr ? `Risque de grain ${wx.squallRisk}` : `Squall risk ${wx.squallRisk}`);
+            const sea = wx.seaState && wx.seaState !== 'unknown' ? ` (${this._label(`weather.sea_state.${wx.seaState}`, wx.seaState)})` : '';
+            if (wx.waveHeight != null) L.push(fr ? `Mer ${wx.waveHeight} mètres${sea}` : `Sea ${wx.waveHeight} meters${sea}`);
+            const trend = wx.pressureTrend && wx.pressureTrend !== 'unknown' ? `, ${this._label(`weather.pressure.${wx.pressureTrend}`, wx.pressureTrend).toLowerCase()}` : '';
+            if (wx.pressure != null) L.push(fr ? `Baromètre ${wx.pressure} hectopascals${trend}` : `Barometer ${wx.pressure} hectopascals${trend}`);
+            if (wx.squallRisk && wx.squallRisk !== 'low') {
+                L.push(fr ? `Risque de grain ${wx.squallRisk === 'high' ? 'élevé' : 'modéré'}` : `Squall risk ${wx.squallRisk}`);
+            }
             if (wx.windAgainstTide) L.push(fr ? `Vent contre courant` : `Wind against tide`);
             if (wx.forecast6h?.windMax != null) L.push(fr ? `Prévision 6 heures: vent max ${wx.forecast6h.windMax} nœuds` : `6-hour forecast: max wind ${wx.forecast6h.windMax} knots`);
         }
@@ -638,21 +659,23 @@ class LLMModule {
         // `totalInRange` alone is not a reason to talk about traffic: it counts
         // every vessel in the model, so a boat with no AIS receiver still scored 1.
         if (s.ais && (s.ais.dangerCount || s.ais.cautionCount)) {
-            let a = fr ? `Trafic AIS ${s.ais.totalInRange ?? 0} cibles, ${s.ais.dangerCount ?? 0} dangereuses`
-                       : `AIS ${s.ais.totalInRange ?? 0} targets, ${s.ais.dangerCount ?? 0} dangerous`;
-            if (s.ais.nearest?.name) {
-                a += fr ? `; la plus proche ${s.ais.nearest.name} CPA ${s.ais.nearest.cpa} milles nautiques dans ${s.ais.nearest.tcpa} minutes`
-                        : `; nearest ${s.ais.nearest.name} CPA ${s.ais.nearest.cpa} nautical miles in ${s.ais.nearest.tcpa} minutes`;
+            const n = s.ais.dangerCount ?? 0;
+            let a = fr ? `Trafic AIS : ${s.ais.totalInRange ?? 0} cibles, ${n} ${n > 1 ? 'dangereuses' : 'dangereuse'}`
+                       : `AIS: ${s.ais.totalInRange ?? 0} targets, ${n} dangerous`;
+            const near = s.ais.nearest;
+            if (near?.name) {
+                a += fr ? `; la plus proche ${near.name}, CPA ${near.cpa} mille dans ${Math.round(near.tcpa)} minutes`
+                        : `; closest ${near.name}, CPA ${near.cpa} miles in ${Math.round(near.tcpa)} minutes`;
+                if (near.role && near.rule) {
+                    a += fr
+                        ? `, ${near.role === 'give-way' ? 'à nous de nous écarter' : near.role === 'stand-on' ? 'à lui de s\'écarter' : 'chacun vient sur tribord'} (règle ${near.rule})`
+                        : `, ${near.role === 'give-way' ? 'we keep clear' : near.role === 'stand-on' ? 'she must keep clear' : 'both alter to starboard'} (rule ${near.rule})`;
+                }
             }
             L.push(a);
         }
 
-        const brief = L.length ? L.join('. ') : (fr ? 'Données limitées disponibles.' : 'Limited data available.');
-        const ask = fr
-            ? `\n\nFais un point de situation de skipper: synthétise l'état actuel, le risque principal à surveiller dans les prochaines heures, et le conseil prioritaire. Croise les paramètres entre eux. Reste concret et naturel.`
-            : `\n\nGive a skipper's situation report: synthesise the current state, the main risk to watch over the next few hours, and the priority advice. Connect the parameters. Keep it concrete and natural.`;
-
-        return brief + ask;
+        return L.length ? L.join('. ') : (fr ? 'Données limitées disponibles.' : 'Limited data available.');
     }
 
     /**
@@ -661,12 +684,19 @@ class LLMModule {
      * @returns {{speech:string, text:string}}
      */
     async generateBriefing(situation) {
+        // Without a model, say the facts themselves rather than nothing
+        const facts = () => {
+            const text = this.buildBriefingFacts(situation);
+            return { speech: textUtils.cleanForTTS(text, this._lang), text, source: 'facts' };
+        };
+        if (!this.isConnected()) return facts();
         try {
             const prompt = this.buildBriefingPrompt(situation);
-            return await this.generateDualOutput(prompt, { temperature: 0.6 });
+            const out = await this.generateDualOutput(prompt, { temperature: 0.6 });
+            return out?.speech || out?.text ? out : facts();
         } catch (error) {
             this.app.debug('LLM briefing failed:', error.message);
-            return null;
+            return facts();
         }
     }
 
@@ -752,10 +782,12 @@ class LLMModule {
      */
     getFallbackWeatherMessage(weatherData) {
         return textUtils.formatTextForTTS(
-            this.cm.t('weather.current', {
+            this.cm.t(Number.isFinite(weatherData.current.waveHeight) ? 'weather.current' : 'weather.current_no_waves', {
                 windSpeed: Math.round(weatherData.current.windSpeed ?? 0),
-                windDir: this._bearingToCardinal(weatherData.current.windDirection ?? 0),
-                waveHeight: (weatherData.current.waveHeight ?? 0).toFixed(1)
+                windDir: Number.isFinite(weatherData.current.windDirection)
+                    ? this._bearingToCardinal(weatherData.current.windDirection)
+                    : this.cm.t('weather.direction_unknown'),
+                waveHeight: Number.isFinite(weatherData.current.waveHeight) ? weatherData.current.waveHeight.toFixed(1) : ''
             }),
             this._lang
         );

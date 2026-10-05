@@ -120,7 +120,8 @@ test('AIS analysis: a fishing vessel ahead, spoken with the rule and the action'
     const [t] = result.targets;
     assert.deepStrictEqual([t.category, t.role, t.rule], ['fishing', 'give-way', '18']);
     assert.ok(result.alerts.length === 1 && result.alerts[0].mmsi === 'urn:mrn:imo:mmsi:228000001');
-    assert.match(result.alerts[0].message, /ais\.reason\.give_way_to_fishing/);
+    assert.deepStrictEqual([result.alerts[0].role, result.alerts[0].rule, result.alerts[0].action], ['give-way', '18', 'give_way_starboard']);
+    assert.ok(result.alerts[0].message.length > 0);
     // Same situation 15 s later: within the cooldown, not repeated
     assert.strictEqual(ais.checkCollisionRisks({ navigation: self.navigation }).alerts.length, 0);
 });

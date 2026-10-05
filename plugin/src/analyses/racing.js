@@ -92,7 +92,7 @@ class RacingAnalyzer {
             // Weather context
             let weatherSummary = null;
             try {
-                const weatherData = await this.weatherProvider.getWeatherData();
+                const weatherData = await this.weatherProvider.getWeatherData(vesselData.position);
                 weatherSummary = this._extractWeatherSummary(weatherData, env);
             } catch (_) {
                 weatherSummary = this._extractWeatherSummary(null, env);

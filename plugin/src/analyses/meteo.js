@@ -120,7 +120,8 @@ class MeteoAnalyzer {
             gustFactor: Math.round(gustFactor * 100) / 100,
             gustRisk: gustFactor > this.thresholds.gustFactor ? 'high' : gustFactor > 1.2 ? 'moderate' : 'low',
             squallRisk: this._assessSquallRisk(gustFactor, pressureTrend, current),
-            seaState: this.assessSeaState(current.waveHeight || 0),
+            // No wave data is not a glassy sea
+            seaState: Number.isFinite(current.waveHeight) ? this.assessSeaState(current.waveHeight) : 'unknown',
             pressure: {
                 current: current.pressure ?? null,
                 trend: pressureTrend.trend,
@@ -682,12 +683,13 @@ class MeteoAnalyzer {
     generateSummary(weatherData, assessment, recommendations = []) {
         const current = weatherData?.current || {};
         const bf = assessment.beaufort;
-        const cardinal = textUtils.bearingToCardinal(current.windDirection ?? 0);
+        const cardinal = Number.isFinite(current.windDirection) ? textUtils.bearingToCardinal(current.windDirection) : '?';
+        const round = (v, d = 0) => (Number.isFinite(v) ? Number(v.toFixed(d)) : '?');
 
         const summary = {
             conditions: `F${bf?.force ?? '?'} ${bf?.label ?? ''} - ` +
-                `Wind ${current.windSpeed ?? '?'}kts from ${cardinal}, ` +
-                `Waves ${current.waveHeight ?? '?'}m, ${assessment.seaState} sea`,
+                `Wind ${round(current.windSpeed)}kts from ${cardinal}, ` +
+                `Waves ${round(current.waveHeight, 1)}m, ${assessment.seaState} sea`,
             sailing: `${assessment.sailing?.pointOfSail ?? 'unknown'}, TWA ${assessment.sailing?.twa ?? '?'}°, ` +
                 `efficiency ${assessment.sailing?.efficiency ?? 'unknown'}`,
             trend: assessment.trend?.overall ?? 'unknown'
@@ -720,13 +722,16 @@ class MeteoAnalyzer {
     getFallbackAnalysisText(weatherData, assessment) {
         const current = weatherData?.current || {};
         const bf = assessment.beaufort;
-        const cardinal = textUtils.bearingToCardinal(current.windDirection ?? 0);
         const bfLabel = this.cm.t(`weather.beaufort.${bf?.force ?? 0}`);
+        const windDir = Number.isFinite(current.windDirection)
+            ? textUtils.bearingToCardinal(current.windDirection)
+            : this.cm.t('weather.direction_unknown');
 
-        let speech = this.cm.t('weather.current', {
+        // Waves only when the forecast has them
+        let speech = this.cm.t(Number.isFinite(current.waveHeight) ? 'weather.current' : 'weather.current_no_waves', {
             windSpeed: Math.round(current.windSpeed ?? 0),
-            windDir: cardinal,
-            waveHeight: (current.waveHeight ?? 0).toFixed(1)
+            windDir,
+            waveHeight: Number.isFinite(current.waveHeight) ? current.waveHeight.toFixed(1) : ''
         });
         speech = `F${bf?.force ?? '?'} ${bfLabel}. ${speech}`;
 

@@ -63,3 +63,17 @@ test('failure advice is spoken in plain units, never as a locale key', () => {
     assert.match(a.message, /Surchauffe moteur main : 99 °C/);
     assert.match(b.message, /Batterie 1 basse : 11.2 volts/);
 });
+
+test('course data: the next waypoint position is read through its Signal K node', () => {
+    const node = (value) => ({ value, $source: 'courseApi', timestamp: '2026-10-05T10:00:00Z' });
+    const self = {
+        navigation: {
+            position: node({ latitude: 46.13, longitude: -1.22 }),
+            courseGreatCircle: { nextPoint: { position: node({ latitude: 46.143, longitude: -1.19 }), type: node('Location') } },
+        },
+    };
+    const app = { debug: () => {}, error: () => {}, setPluginStatus: () => {}, getSelfPath: (p) => p.split('.').reduce((o, k) => o?.[k], self) };
+    const c = new SignalKProvider(app, 'ocearo-core').getCourseData();
+    assert.ok(Number.isFinite(c.bearing) && c.bearing > 50 && c.bearing < 70, `bearing ${c.bearing}`);
+    assert.ok(c.distanceNM > 1 && c.distanceNM < 2);
+});

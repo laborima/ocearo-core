@@ -1176,8 +1176,17 @@ class OrchestratorBrain {
                     return routeAnalysis;
                 }
                 case 'ais': {
+                    // On request: the full picture, whatever the watch already announced
+                    // (and without touching its announcement cooldowns)
                     const vesselDataAIS = this.signalkProvider.getVesselData();
-                    const aisResult = this.aisAnalyzer.checkCollisionRisks(vesselDataAIS);
+                    const targets = this.aisAnalyzer.analyzeTargets(vesselDataAIS);
+                    const risky = targets.filter(x => x.risk === 'danger' || x.risk === 'caution');
+                    const aisResult = {
+                        targets,
+                        totalInRange: targets.length,
+                        dangerCount: targets.filter(x => x.risk === 'danger').length,
+                        cautionCount: targets.filter(x => x.risk === 'caution').length,
+                    };
                     let aisSpeech;
                     if (aisResult.totalInRange === 0) {
                         aisSpeech = this.cm.t('ais.no_targets');
@@ -1187,9 +1196,8 @@ class OrchestratorBrain {
                             danger: aisResult.dangerCount,
                             caution: aisResult.cautionCount
                         });
-                        if (aisResult.speech) {
-                            aisSpeech += ' ' + aisResult.speech;
-                        }
+                        const details = risky.slice(0, 2).map(x => this.aisAnalyzer._buildAlertMessage(x));
+                        if (details.length) aisSpeech += ' ' + details.join(' ');
                     }
                     this.voice.speak(aisSpeech, { priority: 'high' });
                     return { ...aisResult, speech: aisSpeech };
@@ -2242,15 +2250,12 @@ class OrchestratorBrain {
         let tide = null;
         try { tide = await this.tidesProvider?.getTideData(); } catch { /* optional */ }
 
-        // Weather + assessment: reuse the last analysis if present, else fetch and
-        // assess (assessConditions is pure — no LLM).
+        // Weather + assessment, fresh: the forecast is cached by the provider
+        // and assessConditions is pure, so this costs nothing. The last stored
+        // analysis is only a fallback (it may date from before any data came in).
         let weatherData = null;
         let assessment = null;
-        const last = this.state.lastWeatherAnalysis;
-        if (last?.weatherData && last?.assessment) {
-            weatherData = last.weatherData;
-            assessment = last.assessment;
-        } else if (vesselData.position) {
+        if (vesselData.position) {
             try {
                 weatherData = await this.weatherProvider.getWeatherData(vesselData.position);
                 if (weatherData?.current) {
@@ -2258,12 +2263,25 @@ class OrchestratorBrain {
                 }
             } catch { /* weather optional */ }
         }
+        const last = this.state.lastWeatherAnalysis;
+        if (!assessment && last?.weatherData && last?.assessment) {
+            weatherData = last.weatherData;
+            assessment = last.assessment;
+        }
 
         // AIS (fresh, pure computation)
         let ais = this.state.lastAISCheck;
         let nearest = null;
         try {
-            const r = this.aisAnalyzer.checkCollisionRisks(vesselData);
+            // Pure analysis: checkCollisionRisks would mark the targets as
+            // announced and silence the automatic watch about them
+            const targets = this.aisAnalyzer.analyzeTargets(vesselData);
+            const r = {
+                targets,
+                totalInRange: targets.length,
+                dangerCount: targets.filter(x => x.risk === 'danger').length,
+                cautionCount: targets.filter(x => x.risk === 'caution').length,
+            };
             ais = { totalInRange: r.totalInRange, dangerCount: r.dangerCount, cautionCount: r.cautionCount };
             // Only name a target when its closest-point figures are actually
             // computable — otherwise the briefing reads "CPA 0 in 0 minutes",
@@ -2272,7 +2290,7 @@ class OrchestratorBrain {
                 x => Number.isFinite(x?.cpa) && Number.isFinite(x?.tcpa) && x.tcpa > 0
             );
             const t = usable.find(x => x.risk === 'danger') || usable[0];
-            if (t) nearest = { name: t.name, cpa: t.cpa, tcpa: t.tcpa, bearing: t.bearing };
+            if (t) nearest = { name: t.name, cpa: t.cpa, tcpa: t.tcpa, bearing: t.bearing, role: t.role, rule: t.rule };
         } catch { /* AIS optional */ }
 
         // Destination / ETA

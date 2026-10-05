@@ -85,7 +85,8 @@
       "high": "grosse",
       "very_high": "très grosse",
       "phenomenal": "énorme",
-      "calm": "calme"
+      "calm": "calme",
+      "unknown": "inconnu"
     },
     "trend": {
       "improving": "En amélioration",
@@ -120,7 +121,9 @@
       "pressure_dropping": "Baromètre en baisse. Dégradation probable dans les 6-12h. Anticipez les ris.",
       "weather_window": "Fenêtre météo favorable : {hours}h de conditions stables attendues.",
       "squall_preparation": "Grain en approche. Prenez un ris de précaution. Main prête à choquer."
-    }
+    },
+    "current_no_waves": "Conditions actuelles : vent {windSpeed} nœuds de {windDir}",
+    "direction_unknown": "direction inconnue"
   },
   "sail": {
     "point_of_sail": {
