@@ -5,16 +5,23 @@
  * - CPA  (Closest Point of Approach) in nautical miles
  * - TCPA (Time to CPA) in minutes
  * - Risk classification (danger / caution / watch / safe)
- * - COLREGs situation (overtaking, crossing, head-on)
+ * - Right of way under COLREG / RIPAM (rules 12-19, see colregs.js): our
+ *   role, the rule and the action to take
  *
  * Thresholds follow IRPCS (International Regulations for Preventing
  * Collisions at Sea) best-practice guidance for coastal sailing.
  */
 
-const { conversions, textUtils } = require('../common');
+const colregs = require('./colregs');
 
 /** Metres per nautical mile */
 const NM = 1852;
+
+/** How urgent each action is: a more urgent one is announced at once */
+const ACTION_URGENCY = {
+    stand_on: 0, give_way_slow: 1, give_way_astern: 1, give_way_starboard: 1, head_on_starboard: 2,
+    restricted_visibility: 2, stand_on_ready: 2, stand_on_act: 3,
+};
 
 /** Risk ordering for sorting targets (most dangerous first) */
 const RISK_ORDER = { danger: 0, caution: 1, watch: 2, safe: 3 };
@@ -38,8 +45,10 @@ class AISAnalyzer {
         this.maxTCPA    = config.ais?.maxTCPA    ?? 30;     // minutes
         this.maxRange   = config.ais?.maxRange   ?? 5;      // NM – ignore targets further away
 
-        // Suppression: don't re-announce same vessel within N minutes
+        // Suppression: don't re-announce same vessel within N minutes, unless
+        // the action required becomes more urgent (rule 17: act now)
         this._announced = new Map();
+        this._lastAction = new Map();
         this.announceCooldown = (config.ais?.announceCooldownMinutes ?? 5) * 60_000;
     }
 
@@ -60,6 +69,14 @@ class AISAnalyzer {
 
         const targets = this._readAISTargets();
         const results = [];
+        const own = {
+            course: ownCog ?? 0,
+            speed: ownSog ?? 0,
+            category: colregs.ownCategory(this._ownStatus()),
+        };
+        const twd = this._selfNumber('environment.wind.directionTrue', 180 / Math.PI);
+        const visibilityM = this._selfNumber('environment.outside.visibility', 1);
+        const visibilityNm = Number.isFinite(visibilityM) ? visibilityM / NM : null;
 
         for (const target of targets) {
             const tgtPos = target.position;
@@ -77,7 +94,20 @@ class AISAnalyzer {
             );
 
             const risk = this._classifyRisk(cpaResult.cpa, cpaResult.tcpa);
-            const colregs = this._classifyCOLREGs(relativeBearing, target.sog ?? 0, ownSog ?? 0);
+            const north = (tgtPos.latitude - ownPos.latitude) * 60 * NM;
+            const east = (tgtPos.longitude - ownPos.longitude) * 60 * NM * Math.cos(ownPos.latitude * Math.PI / 180);
+            const advice = colregs.advise({
+                own,
+                target: {
+                    x: east, y: north, course: target.cog ?? 0, speed: target.sog ?? 0,
+                    category: colregs.targetCategory(target),
+                },
+                twd,
+                cpaNm: cpaResult.cpa,
+                tcpaMin: cpaResult.tcpa,
+                visibilityNm,
+                dangerCpaNm: this.dangerCPA,
+            });
 
             results.push({
                 mmsi: target.mmsi,
@@ -90,7 +120,13 @@ class AISAnalyzer {
                 cpa: Math.round(cpaResult.cpa * 100) / 100,
                 tcpa: Math.round(cpaResult.tcpa * 10) / 10,
                 risk,
-                colregs,
+                // Situation key, kept for older consumers (LLM prompt, logbook)
+                colregs: advice.situation,
+                role: advice.ownRole,
+                rule: advice.rule,
+                reason: advice.reason,
+                action: advice.action,
+                category: colregs.targetCategory(target),
                 position: tgtPos,
                 sog: target.sog,
                 cog: target.cog
@@ -119,7 +155,9 @@ class AISAnalyzer {
         for (const target of dangerous) {
             const key = target.mmsi || target.name;
             const lastAnnounce = this._announced.get(key);
-            if (lastAnnounce && (Date.now() - lastAnnounce) < this.announceCooldown) {
+            const escalated = ACTION_URGENCY[target.action] > (ACTION_URGENCY[this._lastAction.get(key)] ?? -1);
+            this._lastAction.set(key, target.action);
+            if (lastAnnounce && (Date.now() - lastAnnounce) < this.announceCooldown && !escalated) {
                 continue;
             }
 
@@ -127,8 +165,12 @@ class AISAnalyzer {
 
             const alert = {
                 type: 'collision_risk',
-                severity: target.risk === 'danger' ? 'alarm' : 'warn',
+                severity: target.risk === 'danger' || target.action === 'stand_on_act' ? 'alarm' : 'warn',
+                mmsi: target.mmsi,
                 target: target.name,
+                role: target.role,
+                rule: target.rule,
+                action: target.action,
                 cpa: target.cpa,
                 tcpa: target.tcpa,
                 range: target.range,
@@ -161,22 +203,14 @@ class AISAnalyzer {
      * @returns {string}       Alert message
      */
     _buildAlertMessage(target) {
-        const colregsKey = this._colregsToKey(target.colregs);
-        const colregsText = this.cm.t(`ais.colregs.${colregsKey}`);
-        const evasiveKey = this._evasiveActionKey(target.colregs);
-        const evasiveText = this.cm.t(`ais.alert.evasive.${evasiveKey}`);
-
-        if (target.risk === 'danger') {
-            return this.cm.t('ais.alert.danger_vessel', {
-                name: target.name, distance: target.range,
-                cpa: target.cpa, tcpa: Math.round(target.tcpa),
-                colregs: colregsText, evasive: evasiveText
-            });
-        }
-        return this.cm.t('ais.alert.caution_vessel', {
+        const params = {
             name: target.name, distance: target.range,
-            cpa: target.cpa, tcpa: Math.round(target.tcpa)
-        });
+            cpa: target.cpa, tcpa: Math.round(target.tcpa),
+            role: this.cm.t(`ais.reason.${target.reason}`),
+            rule: target.rule,
+            action: this.cm.t(`ais.action.${target.action}`),
+        };
+        return this.cm.t(target.risk === 'danger' ? 'ais.alert.danger_vessel' : 'ais.alert.caution_vessel', params);
     }
 
     // ────────── CPA / TCPA CALCULATION ──────────
@@ -232,56 +266,36 @@ class AISAnalyzer {
         return 'safe';
     }
 
-    /**
-     * Classify COLREGs situation based on relative bearing and speeds.
-     * @returns {'head_on'|'crossing_starboard'|'crossing_port'|'overtaking'|'being_overtaken'|'safe_passing'}
-     */
-    _classifyCOLREGs(relativeBearing, targetSog, ownSog) {
-        const absBearing = Math.abs(relativeBearing);
+    // ────────── OWN STATUS ──────────
 
-        if (absBearing < 10) return 'head_on';
-        if (absBearing > 112.5 && absBearing < 247.5) {
-            return targetSog > ownSog ? 'being_overtaken' : 'overtaking';
+    /** Our navigation status and whether an engine turns (rule 3: motor-sailing is power) */
+    _ownStatus() {
+        const navState = this._selfValue('navigation.state');
+        let engineRunning = false;
+        const propulsion = this._selfValue('propulsion');
+        if (propulsion && typeof propulsion === 'object') {
+            for (const engine of Object.values(propulsion)) {
+                const rev = engine?.revolutions?.value ?? engine?.revolutions;
+                const state = engine?.state?.value ?? engine?.state;
+                if ((typeof rev === 'number' && rev > 1) || state === 'started') engineRunning = true;
+            }
         }
-        if (relativeBearing > 0 && relativeBearing < 112.5) return 'crossing_starboard';
-        if (relativeBearing < 0 || relativeBearing > 247.5) return 'crossing_port';
-        return 'safe_passing';
+        return { navState, engineRunning, sailboat: this.config.boatType !== 'motor' };
     }
 
-    // ────────── COLREGs HELPERS ──────────
-
-    /**
-     * Map internal COLREGs situation to locale key.
-     * @param {string} situation
-     * @returns {string}
-     */
-    _colregsToKey(situation) {
-        const map = {
-            head_on: 'head_on',
-            crossing_starboard: 'crossing_give_way',
-            crossing_port: 'crossing_stand_on',
-            overtaking: 'overtaking',
-            being_overtaken: 'being_overtaken',
-            safe_passing: 'crossing_stand_on'
-        };
-        return map[situation] || situation;
+    _selfValue(path) {
+        try {
+            const v = this.app.getSelfPath?.(path);
+            return v && typeof v === 'object' && 'value' in v ? v.value : v;
+        } catch {
+            return undefined;
+        }
     }
 
-    /**
-     * Map COLREGs situation to evasive action locale key.
-     * @param {string} situation
-     * @returns {string}
-     */
-    _evasiveActionKey(situation) {
-        const map = {
-            head_on: 'alter_starboard',
-            crossing_starboard: 'give_way',
-            crossing_port: 'maintain_course',
-            overtaking: 'give_way',
-            being_overtaken: 'maintain_course',
-            safe_passing: 'maintain_course'
-        };
-        return map[situation] || 'maintain_course';
+    /** A numeric own path, scaled (e.g. radians to degrees), or null */
+    _selfNumber(path, scale) {
+        const v = this._selfValue(path);
+        return typeof v === 'number' && Number.isFinite(v) ? v * scale : null;
     }
 
     // ────────── DATA READING ──────────
@@ -320,11 +334,14 @@ class AISAnalyzer {
                     || callsign
                     || null;
 
+                const shipType = this._extractNestedValue(vessel, 'design.aisShipType');
                 targets.push({
                     mmsi: id,
-                    name: name || 'Navire inconnu',
+                    name: name || this.cm.t('ais.unknown_vessel'),
+                    navState: this._extractNestedValue(vessel, 'navigation.state'),
+                    shipType: shipType?.id ?? shipType?.name ?? null,
+                    shipTypeName: shipType?.name ?? null,
                     callsign,
-                    shipType: this._extractNestedValue(vessel, 'design.aisShipType.value.name'),
                     position: { latitude: pos.latitude, longitude: pos.longitude },
                     sog,
                     cog

@@ -624,7 +624,7 @@ class OrchestratorBrain {
                 // near-identical entries.
                 for (const alert of result.alerts) {
                     if (alert.severity !== 'alarm') continue;
-                    const key = alert.target?.mmsi || alert.target?.name || 'unknown';
+                    const key = alert.mmsi || alert.target || 'unknown';
                     const lastLogged = this._aisLogbookCooldown.get(key) || 0;
                     if (Date.now() - lastLogged < this._aisLogbookCooldownMs) continue;
                     this._aisLogbookCooldown.set(key, Date.now());
@@ -635,7 +635,10 @@ class OrchestratorBrain {
                         aisTarget: alert.target,
                         cpa: alert.cpa,
                         tcpa: alert.tcpa,
-                        colregs: alert.colregs
+                        colregs: alert.colregs,
+                        role: alert.role,
+                        rule: alert.rule,
+                        action: alert.action
                     });
                 }
 

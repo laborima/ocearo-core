@@ -242,22 +242,38 @@
       "watch": "WATCH",
       "safe": "SAFE"
     },
-    "colregs": {
-      "head_on": "Head-on collision course",
-      "crossing_give_way": "Crossing — YOU must give way (starboard priority)",
-      "crossing_stand_on": "Crossing — maintain your course (stand-on vessel)",
-      "overtaking": "Overtaking — overtaking vessel must keep clear",
-      "being_overtaken": "Being overtaken — maintain course and speed"
-    },
     "alert": {
-      "danger_vessel": "COLLISION DANGER: {name} at {distance} NM, CPA {cpa} NM in {tcpa} min. {colregs}. Action: {evasive}.",
-      "caution_vessel": "CAUTION: {name} at {distance} NM, CPA {cpa} NM in {tcpa} min. Monitor closely.",
-      "evasive": {
-        "alter_starboard": "Alter course to starboard",
-        "maintain_course": "Maintain course and speed",
-        "slow_down": "Reduce speed",
-        "give_way": "Give way"
-      }
+      "danger_vessel": "Collision danger: {name} at {distance} miles, CPA {cpa} miles in {tcpa} minutes. {role}, rule {rule}. {action}.",
+      "caution_vessel": "Caution: {name} at {distance} miles, CPA {cpa} miles in {tcpa} minutes. {role}, rule {rule}. {action}."
+    },
+    "unknown_vessel": "Unknown vessel",
+    "reason": {
+      "overtaken_by_target": "She is overtaking us and must keep clear",
+      "overtaking": "We are overtaking, we keep clear",
+      "give_way_to_sail": "Sailing vessel, we keep clear",
+      "give_way_to_fishing": "Vessel engaged in fishing, we keep clear",
+      "give_way_to_restricted": "Vessel restricted in her ability to manoeuvre, we keep clear",
+      "stand_on_from_power": "Power-driven vessel, she must keep clear",
+      "stand_on_from_sail": "Sailing vessel, she must keep clear",
+      "stand_on_from_fishing": "Fishing vessel, she must keep clear",
+      "port_tack": "We are on port tack, we keep clear",
+      "target_port_tack": "She is on port tack and must keep clear",
+      "target_windward": "She is to windward and must keep clear",
+      "own_windward": "We are to windward, we keep clear",
+      "head_on": "Head-on, both alter to starboard",
+      "crossing_starboard": "She is on our starboard side, we keep clear",
+      "crossing_port": "She is on our port side and must keep clear",
+      "restricted_visibility": "Restricted visibility, no vessel stands on"
+    },
+    "action": {
+      "give_way_starboard": "Alter boldly to starboard and pass astern of her",
+      "give_way_astern": "Pass astern of her, bearing away or slowing down",
+      "give_way_slow": "Slow down or make a clear change of course",
+      "head_on_starboard": "Alter to starboard",
+      "stand_on": "Hold your course and speed",
+      "stand_on_ready": "Hold on, but be ready to act if she does not",
+      "stand_on_act": "She is not giving way: act now, and do not turn to port",
+      "restricted_visibility": "Slow down, sound signal, do not turn to port"
     }
   },
   "alerts": {

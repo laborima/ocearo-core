@@ -508,19 +508,21 @@ class LLMModule {
 
         if (lang === 'fr') {
             const targets = dangerousTargets.slice(0, 3).map(t =>
-                `${t.name} relèvement ${t.bearing}° à ${t.range} milles, CPA ${t.cpa} milles dans ${t.tcpa} minutes, ${t.colregs}`
+                `${t.name} relèvement ${t.bearing}° à ${t.range} milles, CPA ${t.cpa} milles dans ${t.tcpa} minutes, ` +
+                `RIPAM règle ${t.rule ?? '?'} : nous sommes ${t.role === 'give-way' ? 'non privilégiés' : t.role === 'stand-on' ? 'privilégiés' : 'tenus tous deux de manœuvrer'}`
             ).join('; ');
             return `Risque de collision détecté. Navire propre: ${vesselData.speed ?? '?'} nœuds, cap ${vesselData.heading ?? '?'}°. ` +
                 `Cibles: ${targets}. ` +
-                `Indique quelles cibles sont les plus dangereuses, l'obligation COLREG applicable, et une manœuvre d'évitement claire.`;
+                `Les règles de barre ci-dessus sont déjà établies : ne les change pas. Dis en une ou deux phrases quelle cible surveiller en premier et la manœuvre concrète conforme à ces règles.`;
         }
 
         const targets = dangerousTargets.slice(0, 3).map(t =>
-            `${t.name} bearing ${t.bearing}° at ${t.range}NM, CPA ${t.cpa}NM in ${t.tcpa}min, ${t.colregs}`
+            `${t.name} bearing ${t.bearing}° at ${t.range}NM, CPA ${t.cpa}NM in ${t.tcpa}min, ` +
+            `COLREG rule ${t.rule ?? '?'}: we are ${t.role === 'give-way' ? 'the give-way vessel' : t.role === 'stand-on' ? 'the stand-on vessel' : 'both required to alter'}`
         ).join('; ');
         return `Collision risk detected. Own vessel: ${vesselData.speed ?? '?'} knots heading ${vesselData.heading ?? '?'}°. ` +
             `Targets: ${targets}. ` +
-            `State which targets are most dangerous, the COLREGs obligation, and one clear evasive action.`;
+            `The rules above are already established: do not change them. In one or two sentences, say which target to watch first and the concrete manoeuvre consistent with those rules.`;
     }
 
     /**

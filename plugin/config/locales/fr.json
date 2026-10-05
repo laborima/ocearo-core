@@ -242,22 +242,38 @@
       "watch": "SURVEILLANCE",
       "safe": "SÛR"
     },
-    "colregs": {
-      "head_on": "Route de collision frontale",
-      "crossing_give_way": "Route croisée — VOUS devez manœuvrer (priorité à tribord)",
-      "crossing_stand_on": "Route croisée — maintenez votre cap (priorité)",
-      "overtaking": "Rattrapage — le navire rattrapant doit s'écarter",
-      "being_overtaken": "Vous êtes rattrapé — maintenez cap et vitesse"
-    },
     "alert": {
-      "danger_vessel": "DANGER COLLISION : {name} à {distance} NM, CPA {cpa} NM dans {tcpa} min. {colregs}. Action : {evasive}.",
-      "caution_vessel": "ATTENTION : {name} à {distance} NM, CPA {cpa} NM dans {tcpa} min. Surveillez.",
-      "evasive": {
-        "alter_starboard": "Changez de cap à tribord",
-        "maintain_course": "Maintenez cap et vitesse",
-        "slow_down": "Réduisez la vitesse",
-        "give_way": "Laissez passer"
-      }
+      "danger_vessel": "Danger collision : {name} à {distance} milles, CPA {cpa} milles dans {tcpa} minutes. {role}, règle {rule}. {action}.",
+      "caution_vessel": "Attention : {name} à {distance} milles, CPA {cpa} milles dans {tcpa} minutes. {role}, règle {rule}. {action}."
+    },
+    "unknown_vessel": "Navire inconnu",
+    "reason": {
+      "overtaken_by_target": "Il nous rattrape, il doit s'écarter",
+      "overtaking": "Nous le rattrapons, à nous de nous écarter",
+      "give_way_to_sail": "Voilier, à nous de nous écarter",
+      "give_way_to_fishing": "Navire en pêche, à nous de nous écarter",
+      "give_way_to_restricted": "Navire à capacité de manœuvre restreinte, à nous de nous écarter",
+      "stand_on_from_power": "Navire à moteur, il doit s'écarter",
+      "stand_on_from_sail": "Voilier, il doit s'écarter",
+      "stand_on_from_fishing": "Navire en pêche, il doit s'écarter",
+      "port_tack": "Nous sommes bâbord amures, à nous de nous écarter",
+      "target_port_tack": "Il est bâbord amures, il doit s'écarter",
+      "target_windward": "Il est au vent, il doit s'écarter",
+      "own_windward": "Nous sommes au vent, à nous de nous écarter",
+      "head_on": "Routes opposées, chacun vient sur tribord",
+      "crossing_starboard": "Il vient de tribord, à nous de nous écarter",
+      "crossing_port": "Il vient de bâbord, il doit s'écarter",
+      "restricted_visibility": "Visibilité réduite, personne n'est privilégié"
+    },
+    "action": {
+      "give_way_starboard": "Venez franchement sur tribord, passez derrière lui",
+      "give_way_astern": "Passez derrière lui, en abattant ou en ralentissant",
+      "give_way_slow": "Ralentissez ou changez nettement de route",
+      "head_on_starboard": "Venez sur tribord",
+      "stand_on": "Maintenez cap et vitesse",
+      "stand_on_ready": "Maintenez, mais préparez-vous à manœuvrer s'il ne réagit pas",
+      "stand_on_act": "Il ne manœuvre pas : manœuvrez maintenant, sans venir sur bâbord",
+      "restricted_visibility": "Ralentissez, signal sonore, ne venez pas sur bâbord"
     }
   },
   "alerts": {
