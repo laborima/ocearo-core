@@ -56,7 +56,6 @@ class OrchestratorBrain {
             sailAnalysis: (config.schedules?.sailAnalysis || 120) * 1000,
             aisCheck: (config.schedules?.aisCheck || 15) * 1000,
             failureCheck: (config.schedules?.failureCheck || 60) * 1000,
-            memoryPersist: (config.schedules?.memoryPersist || 600) * 1000,
             depthCheck: (config.schedules?.depthCheck || 15) * 1000,
             navPoint: (config.schedules?.navPointMinutes || 30) * 60 * 1000,
             hourlyLogbook: 60 * 60 * 1000, // Fixed at 1 hour
@@ -275,11 +274,8 @@ class OrchestratorBrain {
             }, this.schedules.sailAnalysis);
         }
         
-        // Memory persistence
-        this.timers.memoryPersist = setInterval(() => {
-            this.memoryManager.persistData();
-        }, this.schedules.memoryPersist);
-        
+        // Memory persistence is scheduled by the MemoryManager itself
+
         // AIS collision monitoring (every 15 seconds by default)
         if (this.config.ais?.enabled !== false) {
             this.timers.aisCheck = setInterval(() => {

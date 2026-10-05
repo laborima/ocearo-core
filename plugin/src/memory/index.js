@@ -11,19 +11,22 @@ class MemoryManager {
         this.app = app;
         this.config = config;
         
-        // Handle different SignalK app object versions
-        let dataPath;
-        if (typeof app.getDataPath === 'function') {
-            dataPath = app.getDataPath();
+        // The plugin's own data directory, like the logbook and anchor stores.
+        // Up to 1.2.0 the memory went to <configPath>/../ocearo-core, which
+        // with the usual ~/.signalk config is the user's home: those files are
+        // moved on start (see _migrateLegacyDir).
+        if (typeof app.getDataDirPath === 'function') {
+            this.dataDir = path.join(app.getDataDirPath(), 'memory');
         } else if (app.config && app.config.configPath) {
-            // Fallback: use SignalK config directory
-            dataPath = path.dirname(app.config.configPath);
+            this.dataDir = path.join(app.config.configPath, 'plugin-config-data', 'ocearo-core', 'memory');
         } else {
-            // Last resort: use a default path
-            dataPath = '/home/node/.signalk/data';
+            this.dataDir = '/home/node/.signalk/plugin-config-data/ocearo-core/memory';
         }
-        
-        this.dataDir = path.join(dataPath, 'ocearo-core');
+        this.legacyDir = app.config?.configPath
+            ? path.join(path.dirname(app.config.configPath), 'ocearo-core')
+            : null;
+        this._persisting = null;
+        this._tmpSeq = 0;
         
         // In-memory stores
         this.vesselContext = {
@@ -47,6 +50,7 @@ class MemoryManager {
         
         // Ensure data directory exists
         await this.ensureDataDirectory();
+        await this._migrateLegacyDir();
         
         // Load persisted data
         await this.loadPersistedData();
@@ -55,7 +59,7 @@ class MemoryManager {
         const persistMinutes = this.config.memory?.persistIntervalMinutes || 10;
         this.persistInterval = setInterval(() => {
             this.persistData().catch(err => {
-                this.app.error('Failed to persist memory data:', err);
+                this.app.error(`Failed to persist memory data: ${err.message}`);
             });
         }, persistMinutes * 60 * 1000);
     }
@@ -92,6 +96,42 @@ class MemoryManager {
                 this.app.error(`Failed to create data directory: ${this.dataDir}`, mkdirError);
                 throw mkdirError;
             }
+        }
+    }
+
+    /**
+     * Move the memory files written by 1.2.0 and earlier outside the plugin's
+     * data directory, so the history is kept. Files already present in the new
+     * directory win.
+     */
+    async _migrateLegacyDir() {
+        if (!this.legacyDir || path.resolve(this.legacyDir) === path.resolve(this.dataDir)) return;
+        for (const name of ['context.json', 'alerts.json', 'navigation.json']) {
+            const from = path.join(this.legacyDir, name);
+            const to = path.join(this.dataDir, name);
+            try {
+                await fs.access(from);
+            } catch {
+                continue; // nothing to migrate
+            }
+            try {
+                await fs.access(to);
+                continue; // keep the newer file
+            } catch {
+                // not there yet: move it
+            }
+            try {
+                await fs.copyFile(from, to);
+                await fs.unlink(from);
+                this.app.debug(`Memory file moved from ${from} to ${to}`);
+            } catch (error) {
+                this.app.debug(`Could not move ${from}: ${error.message}`);
+            }
+        }
+        try {
+            await fs.rmdir(this.legacyDir); // only succeeds once empty
+        } catch {
+            // other files left there: leave the directory alone
         }
     }
 
@@ -135,6 +175,15 @@ class MemoryManager {
      * Persist data to disk
      */
     async persistData() {
+        // One write at a time: a call made while one is running waits for it
+        if (this._persisting) return this._persisting;
+        this._persisting = this._persistNow().finally(() => {
+            this._persisting = null;
+        });
+        return this._persisting;
+    }
+
+    async _persistNow() {
         try {
             // Save vessel context
             await this._atomicWrite(
@@ -158,7 +207,8 @@ class MemoryManager {
 
             this.app.debug('Memory data persisted successfully');
         } catch (error) {
-            this.app.error('Error persisting data:', error);
+            // The server's logger prints only its first argument
+            this.app.error(`Error persisting data: ${error.message}`);
         }
     }
 
@@ -169,7 +219,7 @@ class MemoryManager {
      * @param {string} data
      */
     async _atomicWrite(filePath, data) {
-        const tmp = `${filePath}.${process.pid}.tmp`;
+        const tmp = `${filePath}.${process.pid}.${++this._tmpSeq}.tmp`;
         await fs.writeFile(tmp, data);
         await fs.rename(tmp, filePath);
     }
