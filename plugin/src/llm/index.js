@@ -16,6 +16,11 @@ class LLMModule {
         this.baseUrl = config.llm?.ollamaHost || 'http://localhost:11434';
         this.model = config.llm?.model || 'gemma3n:e2b';
         this.timeout = (config.llm?.timeoutSeconds || 30) * 1000;
+        // Generation budgets. They are upper bounds: a small model stops well
+        // before them, while a reasoning model (qwen3, gpt-oss) spends hundreds
+        // of tokens thinking before its answer and returns nothing below them.
+        this.maxTokensSpeech = config.llm?.maxTokensSpeech || 600;
+        this.maxTokensText = config.llm?.maxTokensText || 1500;
         this._connected = false;
         this._lastConnectionCheck = 0;
         this._connectionCheckInterval = 60000;
@@ -200,8 +205,8 @@ class LLMModule {
 
         // Sequential on purpose: parallel generations contend for the RPi5's
         // CPU-capped Ollama (CPUQuota) and both end up exceeding the timeout.
-        const speechRaw = await this.generateCompletion(voicePrompt, { ...options, max_tokens: 80 });
-        const textRaw = await this.generateCompletion(textPrompt, { ...options, max_tokens: 250 });
+        const speechRaw = await this.generateCompletion(voicePrompt, { ...options, max_tokens: this.maxTokensSpeech });
+        const textRaw = await this.generateCompletion(textPrompt, { ...options, max_tokens: this.maxTokensText });
 
         return {
             speech: textUtils.cleanForTTS(speechRaw, lang),
@@ -249,7 +254,7 @@ class LLMModule {
                     options: {
                         temperature: options.temperature || 0.7,
                         top_p: options.top_p || 0.9,
-                        num_predict: options.max_tokens || 150
+                        num_predict: options.max_tokens || this.maxTokensText
                     }
                 }),
                 signal: controller.signal
@@ -263,10 +268,19 @@ class LLMModule {
 
             const data = await response.json();
             this._recordOutcome(true);
-            return data.message?.content || data.response || '';
+            const content = data.message?.content || data.response || '';
+            if (!content.trim() && data.done_reason === 'length') {
+                // The budget ran out before any answer (typically while a
+                // reasoning model was still thinking): say so instead of
+                // returning an empty string that fails later without a cause.
+                const err = new Error(`LLM answer empty: the ${options.max_tokens || this.maxTokensText}-token budget ran out before the model answered; raise the token limits in the AI settings`);
+                err.truncated = true; // the service works: do not count it towards the circuit breaker
+                throw err;
+            }
+            return content;
         } catch (error) {
             clearTimeout(timeout);
-            this._recordOutcome(false);
+            if (!error.truncated) this._recordOutcome(false);
             if (!error.message.includes('LLM service not available')) {
                 this.app.debug('LLM generation failed:', error.message);
             }

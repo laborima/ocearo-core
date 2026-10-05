@@ -79,6 +79,22 @@
           "default": 30,
           "minimum": 5,
           "maximum": 120
+        },
+        "maxTokensSpeech": {
+          "type": "number",
+          "title": "Token limit, spoken answers",
+          "description": "Upper bound for a spoken answer. Small models stop well before it; reasoning models (qwen3, gpt-oss) think first and need several hundred tokens.",
+          "default": 600,
+          "minimum": 50,
+          "maximum": 4000
+        },
+        "maxTokensText": {
+          "type": "number",
+          "title": "Token limit, written answers",
+          "description": "Upper bound for a written answer (logbook, briefings). Raise it if the log reports that the token budget ran out.",
+          "default": 1500,
+          "minimum": 100,
+          "maximum": 8000
         }
       }
     },
