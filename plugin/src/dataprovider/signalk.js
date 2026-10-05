@@ -351,7 +351,10 @@ class SignalKDataProvider {
           courseOverGroundMagnetic: this._getSelfPath(skPaths.navigation.courseOverGroundMagnetic),
           headingTrue: this._getSelfPath(skPaths.navigation.headingTrue),
           headingMagnetic: this._getSelfPath(skPaths.navigation.headingMagnetic),
-          position: this._getSelfPath(skPaths.navigation.position)
+          position: this._getSelfPath(skPaths.navigation.position),
+          speedThroughWater: this._getSelfPath('navigation.speedThroughWater'),
+          attitude: this._getSelfPath('navigation.attitude'),
+          state: this._getSelfPath('navigation.state')
         },
         environment: {
           depth: {
@@ -363,8 +366,10 @@ class SignalKDataProvider {
             angleApparent: this._getSelfPath(skPaths.environment.wind.angleApparent),
             speedTrue: this._getSelfPath(skPaths.environment.wind.speedTrue),
             angleTrueWater: this._getSelfPath(skPaths.environment.wind.angleTrueWater),
-            directionTrue: this._getSelfPath(skPaths.environment.wind.directionTrue)
+            directionTrue: this._getSelfPath(skPaths.environment.wind.directionTrue),
+            gust: this._getSelfPath('environment.wind.gust')
           },
+          current: this._getSelfPath('environment.current'),
           water: {
             temperature: this._getSelfPath(skPaths.environment.water.temperature)
           },
@@ -417,9 +422,16 @@ class SignalKDataProvider {
 
     const depth = num(env.depth?.belowKeel) ?? num(env.depth?.belowTransducer);
 
+    const att = nav.attitude && typeof nav.attitude === 'object' ? nav.attitude : null;
+    const signedDeg = (rad) => (num(rad) !== undefined ? Math.round(conversions.radToDeg(rad) * 10) / 10 : undefined);
+
     return {
       speed: kn(nav.speedOverGround),
       sog: kn(nav.speedOverGround),
+      stw: kn(nav.speedThroughWater),
+      // Heel and trim in degrees (roll > 0: heeled to starboard)
+      attitude: att ? { roll: signedDeg(att.roll), pitch: signedDeg(att.pitch) } : undefined,
+      state: typeof nav.state === 'string' ? nav.state : undefined,
       cog: course !== undefined ? Math.round(course) : undefined,
       heading: heading !== undefined ? Math.round(heading) : undefined,
       course: course !== undefined ? Math.round(course) : undefined,
@@ -429,7 +441,10 @@ class SignalKDataProvider {
         speed: kn(env.wind?.speedTrue) ?? kn(env.wind?.speedApparent),
         direction: windDir !== undefined ? Math.round(windDir) : undefined,
         speedApparent: kn(env.wind?.speedApparent),
-        angleApparent: deg(env.wind?.angleApparent)
+        angleApparent: deg(env.wind?.angleApparent),
+        // True wind angle, signed (-180..180, > 0 on starboard)
+        angle: signedDeg(env.wind?.angleTrueWater),
+        gust: kn(env.wind?.gust)
       },
       pressure: num(env.outside?.pressure) !== undefined ? Math.round(env.outside.pressure / 100) : undefined
     };

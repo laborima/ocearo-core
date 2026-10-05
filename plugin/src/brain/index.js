@@ -987,14 +987,17 @@ class OrchestratorBrain {
             let courseAnalysis = null;
 
             // Get wind data
+            // No wind direction: leave it undefined so the analysers say so,
+            // rather than advising on a made-up northerly
             const windData = {
-                speed: vesselData.wind?.speed || 0,
-                direction: vesselData.wind?.direction ?? 0,
+                speed: vesselData.wind?.speed ?? 0,
+                direction: vesselData.wind?.direction,
                 gustSpeed: vesselData.wind?.gust
             };
             
             // Course analysis if destination set
-            if (context.destination?.waypoint) {
+            // Tactical course options need the wind's direction and our heading
+            if (context.destination?.waypoint && Number.isFinite(windData.direction) && Number.isFinite(vesselData.heading)) {
                 const targetBearing = this.calculateBearing(
                     vesselData.position,
                     context.destination.waypoint
