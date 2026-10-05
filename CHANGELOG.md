@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Reasoning models returned empty answers** (qwen3, gpt-oss; [#2](https://github.com/laborima/ocearo-core/issues/2)): the 80 and 250-token budgets ran out while the model was still thinking. They are now 600 and 1500 by default, set in *AI → Token limit*, and an answer cut off before it starts is reported in the log instead of failing silently.
+- **Every "normal" Signal K notification cost an AI call, and real alarms were never spoken** ([#3](https://github.com/laborima/ocearo-core/issues/3)): notifications were read in the wrong shape, so every one came out as "normal" with the message "Alert". The real state and message are read, and only alert, warn, alarm and emergency go on to the AI, the memory and the voice; a boat at its mooring with an engine bus no longer sends ~150 requests an hour.
+- **Weather logbook entries were the short spoken text** ([#4](https://github.com/laborima/ocearo-core/issues/4)): with an empty written answer (see #2) the entry fell back to the voice version. The weather result carries its written text, used first.
+- **"Error persisting data" every twenty minutes, and the memory written to the home directory** ([#5](https://github.com/laborima/ocearo-core/issues/5)): two timers saved at once through the same temporary file. One save runs at a time with its own temporary file, and the memory moves to the plugin's data directory (`plugin-config-data/ocearo-core/memory`); files from the old location are moved on start.
+
 ## [1.2.0] - 2026-10-05
 
 ### Added
