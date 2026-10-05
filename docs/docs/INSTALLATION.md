@@ -5,8 +5,7 @@ This guide covers the complete installation of Ocearo Core and its dependencies.
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [Quick Install](#quick-install)
-- [Manual Installation](#manual-installation)
+- [Installation](#installation)
 - [Installing Dependencies](#installing-dependencies)
   - [Ollama (LLM)](#ollama-llm)
   - [Piper TTS](#piper-tts)
@@ -20,55 +19,26 @@ This guide covers the complete installation of Ocearo Core and its dependencies.
 
 ### Required
 
-- **Signal K Server** version 1.x or higher
-- **Node.js** version 18.0.0 or higher
+- **Signal K Server** 2.x (tested with 2.33)
+- **Node.js** 20 or higher
 
 ### Optional (for full functionality)
 
-- **Ollama** - For LLM-powered intelligent responses
-- **Piper** or **eSpeak** - For text-to-speech output
-- **Audio output device** - For hearing voice announcements
+- **Ollama** — AI-written messages
+- **Kokoro**, **Piper** or **eSpeak** — text-to-speech (Kokoro is the default, see the [README](../../README.md#voice-and-ai-optional))
+- **Audio output device** — to hear the announcements
+- **p7zip-full** — to extract the SHOM bathymetry archives
 
 ---
 
-## Quick Install
+## Installation
 
-### Via npm (Recommended)
-
-The easiest way to install Ocearo Core is through npm:
+Ocearo Core is not yet published on npm or in the Signal K Appstore: install it from a clone.
 
 ```bash
-npm install ocearo-core
-```
-
-Then restart your Signal K server. The plugin will appear in the Admin UI under **Server → Plugin Config**.
-
-### Via Signal K Appstore
-
-1. Open Signal K Admin UI
-2. Navigate to **Appstore → Available**
-3. Search for "Ocearo Core"
-4. Click **Install**
-5. Restart Signal K server
-
----
-
-## Manual Installation
-
-### From GitHub
-
-```bash
-# Navigate to Signal K plugins directory
-cd ~/.signalk/node_modules
-
-# Clone the repository
-git clone https://github.com/laborima/ocearo-core.git
-
-# Enter the plugin directory
-cd ocearo-core/plugin
-
-# Install dependencies
-npm install
+git clone https://github.com/laborima/ocearo-core.git ~/ocearo-core
+cd ~/.signalk
+npm install ~/ocearo-core/plugin
 ```
 
 ### Restart Signal K
@@ -81,6 +51,8 @@ sudo systemctl restart signalk
 signalk-server
 ```
 
+Then enable the plugin in **Admin UI → Server → Plugin Config → Océaro Core**.
+
 ---
 
 ## Installing Dependencies
@@ -92,7 +64,7 @@ Ollama provides local LLM capabilities for intelligent analysis and responses.
 #### Linux
 
 ```bash
-curl -fsSL https://ollama.ai/install.sh | sh
+curl -fsSL https://ollama.com/install.sh | sh
 ```
 
 #### macOS
@@ -108,11 +80,8 @@ Download from [ollama.ai](https://ollama.ai/download)
 #### Pull a Model
 
 ```bash
-# Recommended: llama3.2:3b (small and fast)
-ollama pull llama3.2:3b
-
-# Alternative: llama3 (more capable, larger)
-ollama pull llama3
+# Default: gemma3n:e2b; on a Raspberry Pi 4, gemma3:1b or qwen3:1.7b
+ollama pull gemma3n:e2b
 ```
 
 #### Start Ollama Service
@@ -130,7 +99,7 @@ curl http://localhost:11434/api/tags
 In Signal K Admin UI → Plugin Config → Ocearo Core:
 
 - **Ollama Host**: `http://localhost:11434`
-- **Model**: `llama3.2:3b`
+- **Model**: `gemma3n:e2b`
 
 ---
 
@@ -292,7 +261,7 @@ ollama serve
 
 ### LLM Responses Slow
 
-- Use a smaller model: `llama3.2:3b` instead of `llama3`
+- Use a smaller model: `gemma3:1b` or `qwen3:1.7b`
 - Increase timeout in settings
 - Check system resources (RAM, CPU)
 
@@ -300,7 +269,7 @@ ollama serve
 
 ```bash
 # Fix plugin permissions
-chmod -R 755 ~/.signalk/node_modules/ocearo-core
+chmod -R 755 ~/ocearo-core/plugin
 ```
 
 ---
@@ -309,15 +278,14 @@ chmod -R 755 ~/.signalk/node_modules/ocearo-core
 
 ### Raspberry Pi
 
-- Use ARM64 binaries for Piper
-- Consider using eSpeak for lower resource usage
-- Use `llama3.2:3b` model for Ollama (lower memory)
+- Kokoro runs well on a Raspberry Pi 5; on a Pi 4 prefer Piper (ARM64 binaries) or eSpeak
+- Use `gemma3:1b` or `qwen3:1.7b` for Ollama on a Pi 4 (lower memory)
 
 ### OpenPlotter
 
 Ocearo Core integrates well with OpenPlotter:
 
-1. Install via Signal K Appstore
+1. Install from a clone (see [Installation](#installation))
 2. Configure audio output in OpenPlotter settings
 3. Set up autostart for Ollama service
 

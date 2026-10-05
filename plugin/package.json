@@ -1,7 +1,7 @@
 {
   "name": "ocearo-core",
   "version": "1.2.0",
-  "description": "Océaro Core — Le premier Copilote IA de bord pour Signal K : surveillance globale, prédiction de pannes, optimisation du trim sous voiles selon les polaires, planification de routes, et alertes via LLM et synthèse vocale",
+  "description": "Ocearo Core — the voice of the boat for Signal K: COLREG collision watch, anchor watch, offline SHOM bathymetry, weather, engine and battery monitoring, sail coaching and logbook, spoken through local TTS with an optional local LLM",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -52,7 +52,7 @@
   "signalkPlugin": {
     "id": "ocearo-core",
     "name": "Océaro Core",
-    "description": "Copilote IA de bord : surveillance globale, prédiction de pannes, optimisation du trim sous voiles selon polaires, planification de routes et alertes via Ollama LLM et Piper TTS"
+    "description": "The voice of the boat: COLREG collision watch, anchor watch, SHOM bathymetry, weather, engine and battery monitoring, sail coaching and logbook, spoken aloud"
   },
   "engines": {
     "node": ">=20.0.0"

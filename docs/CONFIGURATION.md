@@ -70,17 +70,18 @@ Configure the Ollama LLM integration.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `llm.ollamaHost` | string | `"http://localhost:11434"` | Ollama server URL |
-| `llm.model` | string | `"llama3.2:3b"` | LLM model to use |
+| `llm.model` | string | `"gemma3n:e2b"` | LLM model to use |
 | `llm.timeoutSeconds` | number | `30` | Request timeout |
 
 ### Recommended Models
 
 | Model | Size | Speed | Quality | RAM Required |
 |-------|------|-------|---------|--------------|
+| `gemma3n:e2b` (default) | 5.6GB | Fast | Good | 8GB |
+| `gemma3:1b` | 0.8GB | Very fast | Fair | 2GB |
+| `qwen3:1.7b` | 1.4GB | Very fast | Fair | 4GB |
+| `phi3:mini` | 2.2GB | Fast | Good | 4GB |
 | `llama3.2:3b` | 2.0GB | Fast | Good | 4GB |
-| `phi4-mini` | 2.5GB | Fast | Good | 4GB |
-| `llama3` | 4.7GB | Medium | Better | 8GB |
-| `mistral` | 4.1GB | Medium | Better | 8GB |
 
 ### Disabling LLM
 
@@ -273,7 +274,7 @@ Configure alert handling.
   "mode": "sailing",
   "llm": {
     "ollamaHost": "http://localhost:11434",
-    "model": "llama3.2:3b",
+    "model": "gemma3n:e2b",
     "timeoutSeconds": 30
   },
   "voice": {
@@ -324,7 +325,7 @@ Configure alert handling.
   "persona": "jarvis",
   "llm": {
     "ollamaHost": "http://localhost:11434",
-    "model": "llama3.2:3b",
+    "model": "gemma3n:e2b",
     "timeoutSeconds": 60
   },
   "voice": {
