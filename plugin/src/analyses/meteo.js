@@ -93,6 +93,9 @@ class MeteoAnalyzer {
                 assessment,
                 analysis,
                 speech: analysis.speech,
+                // The written variant, for the logbook and the display; the
+                // speech variant is short and spelled out for the voice
+                text: analysis.text,
                 timestamp: new Date().toISOString()
             };
         } catch (error) {
@@ -625,7 +628,7 @@ class MeteoAnalyzer {
             const recommendations = this.generateRecommendations(assessment);
 
             const speech = typeof llmResult?.speech === 'string' ? llmResult.speech : (typeof llmResult === 'string' ? llmResult : '');
-            const text = typeof llmResult?.text === 'string' ? llmResult.text : speech;
+            const text = typeof llmResult?.text === 'string' && llmResult.text.trim() ? llmResult.text : speech;
 
             return {
                 speech,
