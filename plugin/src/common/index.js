@@ -708,7 +708,7 @@ const errorHandler = {
       return await operation();
     } catch (error) {
       const errorMsg = context ? `${context}: ${error.message}` : error.message;
-      throw new Error(errorMsg);
+      throw new Error(errorMsg, { cause: error });
     }
   },
 

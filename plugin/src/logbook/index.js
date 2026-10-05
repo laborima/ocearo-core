@@ -68,7 +68,6 @@ class LogbookManager {
      */
     async start() {
         try {
-            const { debug, info, warn, error } = this.log;
 
             // Always initialise local store (needed for fuel log)
             this.store.init();

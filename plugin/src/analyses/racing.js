@@ -12,10 +12,7 @@
  * - LLM-powered strategic advice (FR/EN)
  */
 
-const { textUtils } = require('../common');
 
-/** Nautical miles conversion constant */
-const NM = 1852;
 
 class RacingAnalyzer {
     /**

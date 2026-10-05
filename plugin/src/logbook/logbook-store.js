@@ -163,7 +163,7 @@ class LogbookStore {
             };
             await this._saveIndex();
         } catch (err) {
-            throw new Error(`LogbookStore.setResource failed: ${err.message}`);
+            throw new Error(`LogbookStore.setResource failed: ${err.message}`, { cause: err });
         }
     }
 
@@ -181,7 +181,7 @@ class LogbookStore {
             delete this._index[id];
             await this._saveIndex();
         } catch (err) {
-            throw new Error(`LogbookStore.deleteResource failed: ${err.message}`);
+            throw new Error(`LogbookStore.deleteResource failed: ${err.message}`, { cause: err });
         }
     }
 

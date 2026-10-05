@@ -9,7 +9,6 @@ const fs = require('fs');
 const os = require('os');
 const { execFileSync } = require('child_process');
 
-const HZ = 100;                 // USER_HZ, fixed at 100 on Raspberry Pi OS
 const PAGE_SIZE = 4096;
 
 /** Read a file, returning null instead of throwing when it is absent. */

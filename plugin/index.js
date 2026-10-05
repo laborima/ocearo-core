@@ -78,6 +78,8 @@ function rateLimit(limiter) {
 function sanitiseString(value, maxLen = 2000) {
     if (typeof value !== 'string') return '';
     return value
+        // Strip control characters on purpose (input sanitising)
+        // eslint-disable-next-line no-control-regex
         .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
         .substring(0, maxLen)
         .trim();
@@ -94,16 +96,6 @@ function requireJson(req, res, next) {
         }
     }
     next();
-}
-
-/**
- * Guard: return 503 if brain is not initialised.
- */
-function requireBrain(brain) {
-    return (req, res, next) => {
-        if (!brain) return res.status(503).json({ error: 'Service not initialized' });
-        next();
-    };
 }
 
 /**

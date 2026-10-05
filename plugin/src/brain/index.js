@@ -15,7 +15,6 @@ const AISAnalyzer = require('../analyses/ais');
 const FailurePredictor = require('../analyses/failure');
 const RoutePlanner = require('../analyses/route');
 const RacingAnalyzer = require('../analyses/racing');
-const LogbookManager = require('../logbook');
 const AnchorPlugin = require('../anchor/anchor-plugin');
 
 class OrchestratorBrain {
@@ -1249,7 +1248,7 @@ class OrchestratorBrain {
             if (error.message.includes('LLM service not available')) {
                 this.app.debug(`Manual analysis ${type} skipped - LLM service not available`);
                 this.voice.speak(this.cm.t('general.ai_unavailable'), { priority: 'high' });
-                throw new Error('AI service unavailable');
+                throw new Error('AI service unavailable', { cause: error });
             } else {
                 this.app.debug(`Manual analysis ${type} failed:`, error.message);
                 this.voice.speak(this.cm.t('general.analysis_failed'));

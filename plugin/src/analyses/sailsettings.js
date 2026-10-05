@@ -11,7 +11,6 @@
  * - Expert commentary in FR/EN like a real rigger would give
  */
 
-const { textUtils } = require('../common');
 
 class SailSettingsAnalyzer {
     /**

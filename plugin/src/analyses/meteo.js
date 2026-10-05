@@ -12,7 +12,7 @@
  * - Expert sailor recommendations per condition combination
  */
 
-const { conversions, textUtils } = require('../common');
+const { textUtils } = require('../common');
 
 /** Beaufort scale lookup — wind speed in knots */
 const BEAUFORT = [
@@ -416,8 +416,6 @@ class MeteoAnalyzer {
     assessTrend(forecast = {}) {
         const h6 = forecast.hours6 || {};
         const h12 = forecast.hours12 || {};
-        const h24 = forecast.hours24 || {};
-
         const trends = {
             wind: 'stable', waves: 'stable', pressure: 'stable', overall: 'stable',
             windChange: null, waveChange: null
