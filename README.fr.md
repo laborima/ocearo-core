@@ -63,6 +63,13 @@ Ocearo Core va au-delà des simples tableaux de bord. C'est un Copilote IA intel
 - Optimisation de route avec analyse VMG
 - Suggestions de prise de ris selon les conditions
 
+### ⚓ Veille anti-collision (RIPAM / COLREG)
+- CPA / TCPA de chaque cible AIS, toutes les 15 s
+- Qui doit manœuvrer selon les règles de barre et de route, les mêmes que l'affichage ocearo-ui : rattrapage (13), hiérarchie des navires (18 : voilier, pêche, capacité de manœuvre restreinte, d'après le statut AIS ou le type ; un voilier au moteur est un navire à propulsion mécanique), deux voiliers (12 : amures d'après le vent réel, navire au vent), routes opposées (14), routes croisées (15)
+- Ce qu'il faut faire, annoncé à la voix : manœuvrer tôt et passer derrière (16), maintenir cap et vitesse, se tenir prêt, puis manœuvrer si l'autre ne le fait pas (17), aucun navire privilégié par visibilité réduite (19)
+- Répété aussitôt que l'action devient plus urgente ; une entrée de journal par cible et par situation
+- Une aide à la veille, jamais une décision : ni chenaux étroits ni dispositifs de séparation du trafic (règles 9–10)
+
 ### 🚨 Alertes Intelligentes
 - Intercepte toutes les notifications Signal K
 - Explications contextuelles par LLM
@@ -137,7 +144,7 @@ AnchorPlugin ──► AnchorAlarm ──► Notifications SK
 ### Prérequis
 
 - **Signal K Server** ≥ 1.x
-- **Node.js** ≥ 18.0.0
+- **Node.js** ≥ 20
 - **Ollama** (optionnel, pour le LLM) — [Installer Ollama](https://ollama.ai)
 - **Piper TTS** (optionnel, pour la voix) — [Installer Piper](https://github.com/rhasspy/piper)
 
