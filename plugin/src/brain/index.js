@@ -701,14 +701,9 @@ class OrchestratorBrain {
                         this.voice.announce(result.speech, result.priority, { safety: true });
                     }
 
-                    // Update memory if important
+                    // Critical alerts go to the logbook (processAlert has
+                    // already recorded every alert in the memory)
                     if (result && (result.severity === 'alarm' || result.severity === 'emergency')) {
-                        this.memoryManager.addAlert({
-                            ...result,
-                            timestamp: new Date().toISOString()
-                        });
-
-                        // Log critical alerts to logbook
                         await this.logAnalysisToLogbook('alert', result);
                     }
                 } catch (error) {
