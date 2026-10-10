@@ -449,7 +449,7 @@ module.exports = function(app) {
             }
 
             try {
-                brain.updateMode(mode);
+                brain.updateMode(mode, { source: 'user' });
                 res.json({ success: true, mode });
             } catch (error) {
                 res.status(400).json({

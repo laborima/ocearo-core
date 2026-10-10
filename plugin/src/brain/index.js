@@ -16,6 +16,7 @@ const FailurePredictor = require('../analyses/failure');
 const RoutePlanner = require('../analyses/route');
 const RacingAnalyzer = require('../analyses/racing');
 const AnchorPlugin = require('../anchor/anchor-plugin');
+const ModeManager = require('./mode-manager');
 
 class OrchestratorBrain {
     constructor(app, config, components) {
@@ -37,9 +38,15 @@ class OrchestratorBrain {
         // Anchor plugin
         this.anchorPlugin = new AnchorPlugin(app, 'ocearo-core', config);
         this.anchorPlugin.onModeChange(mode => this.updateMode(mode));
+
+        // Startup mode, automatic departure and per-mode alert gating. With
+        // autoMode disabled, the configured mode is used as before.
+        this.autoMode = config.autoMode?.enabled !== false;
+        this.modeManager = new ModeManager(config.autoMode || {});
         
         // Analysis modules — pass ConfigManager to all analyzers
         this.alertAnalyzer = new AlertAnalyzer(app, config, this.llm, this.memoryManager, this.cm);
+        this.alertAnalyzer.getMode = () => this.state.mode;
         this.meteoAnalyzer = new MeteoAnalyzer(app, config, this.llm, 
             this.weatherProvider, this.tidesProvider, this.cm);
         this.sailCourseAnalyzer = new SailCourseAnalyzer(app, config, this.llm, this.cm);
@@ -57,6 +64,7 @@ class OrchestratorBrain {
             aisCheck: (config.schedules?.aisCheck || 15) * 1000,
             failureCheck: (config.schedules?.failureCheck || 60) * 1000,
             depthCheck: (config.schedules?.depthCheck || 15) * 1000,
+            modeCheck: 5 * 1000,
             navPoint: (config.schedules?.navPointMinutes || 30) * 60 * 1000,
             hourlyLogbook: 60 * 60 * 1000, // Fixed at 1 hour
             racingAdvice: (config.schedules?.racingAdviceMinutes || 10) * 60 * 1000
@@ -74,7 +82,8 @@ class OrchestratorBrain {
 
         // State
         this.state = {
-            mode: config.mode || 'sailing',
+            mode: this.autoMode ? 'moored' : (config.mode || 'sailing'),
+            modeSource: 'startup',
             lastWeatherAnalysis: null,
             lastSailAnalysis: null,
             lastAISCheck: null,
@@ -126,6 +135,17 @@ class OrchestratorBrain {
 
             const warnThreshold = 3.0;
             const alarmThreshold = 2.5;
+
+            const policy = this.modeManager.alertPolicy(this.state.mode);
+            if (policy.depth === 'off') {
+                // Alongside, low water under the keel is normal: nothing to say
+                this._clearDepthNotification();
+                return;
+            }
+            if (policy.depth === 'once') {
+                await this._checkAnchoredDepth(value, warnThreshold, alarmThreshold);
+                return;
+            }
             let level = null;
             if (value < alarmThreshold) {
                 level = 'alarm';
@@ -166,6 +186,97 @@ class OrchestratorBrain {
         }
     }
 
+    _clearDepthNotification() {
+        if (this.state.depthAlertLevel !== null) {
+            this.signalkProvider.writePath(`notifications.${this.config.pluginId || 'ocearo-core'}.depth`, null);
+            this.state.depthAlertLevel = null;
+        }
+    }
+
+    _writeDepthNotification(level, message, value) {
+        this.signalkProvider.writePath(
+            `notifications.${this.config.pluginId || 'ocearo-core'}.depth`,
+            {
+                state: level,
+                message,
+                method: ['visual', 'sound'],
+                timestamp: new Date().toISOString(),
+                value
+            }
+        );
+        this.state.depthAlertLevel = level;
+    }
+
+    /**
+     * At anchor: one warning per anchorage, as early as the tide allows
+     * ("at low water around 14:10, about 2.1 m will remain"), then one alarm if
+     * the depth really goes under the alarm threshold. The flags live with the
+     * anchor state, so a restart at anchor does not repeat them.
+     */
+    async _checkAnchoredDepth(value, warnThreshold, alarmThreshold) {
+        const anchorState = this.anchorPlugin.anchorState;
+        const flags = anchorState.depthAlerts || {};
+
+        if (!flags.alarm && value < alarmThreshold) {
+            const message = this.cm.t('anchor.depthAlarm', { depth: value.toFixed(1) });
+            this._writeDepthNotification('alarm', message, value);
+            this.voice.announce(message, 'high', { safety: true });
+            anchorState.setDepthAlerts({ ...flags, warn: true, alarm: true });
+            return;
+        }
+        if (flags.warn) return;
+
+        let tide = null;
+        try {
+            tide = await this.tidesProvider?.getTideData?.();
+        } catch (error) {
+            this.app.debug('Tide data unavailable for anchor depth check:', error.message);
+        }
+        const ahead = ModeManager.lowestDepthAhead(value, tide);
+        let message = null;
+        if (ahead && ahead.depth < warnThreshold) {
+            const time = ahead.time.toLocaleTimeString(this.cm.language === 'en' ? 'en-GB' : 'fr-FR', { hour: '2-digit', minute: '2-digit' });
+            message = this.cm.t('anchor.depthAtLowWater', { time, depth: Math.max(0, ahead.depth).toFixed(1) });
+        } else if (value < warnThreshold) {
+            message = this.cm.t('anchor.depthLow', { depth: value.toFixed(1) });
+        }
+        if (!message) return;
+
+        this._writeDepthNotification('warn', message, value);
+        this.voice.announce(message, 'normal', { safety: true });
+        anchorState.setDepthAlerts({ ...flags, warn: true });
+    }
+
+    /**
+     * Leave 'moored' once the boat really moves (see ModeManager).
+     */
+    checkModeTransition() {
+        if (!this.state.started || !this.autoMode) return;
+        try {
+            const vesselData = this.signalkProvider.getVesselData();
+            const next = this.modeManager.observe({
+                sogMs: vesselData?.navigation?.speedOverGround,
+                position: vesselData?.navigation?.position,
+                engineRunning: this._engineRunning(vesselData),
+                now: Date.now()
+            });
+            if (next) this.updateMode(next, { source: 'auto' });
+        } catch (error) {
+            this.app.debug('Mode transition check error:', error.message);
+        }
+    }
+
+    _engineRunning(vesselData) {
+        if (vesselData?.navigation?.state === 'motoring') return true;
+        const engines = vesselData?.propulsion || {};
+        return Object.values(engines).some(engine => {
+            const rev = engine?.revolutions;
+            const rpm = typeof rev === 'object' && rev !== null ? rev.value : rev;
+            const state = typeof engine?.state === 'object' && engine.state !== null ? engine.state.value : engine?.state;
+            return (Number.isFinite(rpm) && rpm > 0) || state === 'started';
+        });
+    }
+
     /**
      * Start orchestrator
      */
@@ -183,6 +294,14 @@ class OrchestratorBrain {
 
         // Start anchor plugin (loads persisted state, resumes monitoring if needed)
         this.anchorPlugin.start();
+
+        if (this.autoMode) {
+            const mode = this.modeManager.startupMode(this.anchorPlugin.anchorState.isMonitoring());
+            this.state.mode = mode;
+            this.state.modeSource = 'startup';
+            this.modeManager.setMode(mode, 'startup');
+            this.app.debug(`Startup mode: ${mode}`);
+        }
 
         // Initialize components
         this.initializeSchedules();
@@ -261,14 +380,21 @@ class OrchestratorBrain {
         this.timers.depthCheck = setInterval(() => {
             this.checkDepthSafety();
         }, this.schedules.depthCheck);
+
+        // Automatic departure from 'moored'
+        if (this.autoMode) {
+            this.timers.modeCheck = setInterval(() => {
+                this.checkModeTransition();
+            }, this.schedules.modeCheck);
+        }
         
         // Weather updates
         this.timers.weatherUpdate = setInterval(() => {
             this.updateWeather();
         }, this.schedules.weatherUpdate);
         
-        // Sail analysis - create timer for any mode except anchored
-        if (this.config.mode !== 'anchored') {
+        // Sail analysis - only while under way
+        if (!this.modeManager.isStationary(this.state.mode)) {
             this.timers.sailAnalysis = setInterval(() => {
                 this.analyzeSailing();
             }, this.schedules.sailAnalysis);
@@ -593,6 +719,13 @@ class OrchestratorBrain {
                 timestamp: new Date().toISOString()
             };
 
+            // Alongside or at anchor, boats passing close by are normal: keep the
+            // counts for the status, announce nothing.
+            if (!this.modeManager.alertPolicy(this.state.mode).collision) {
+                this.aisAnalyzer.cleanup();
+                return;
+            }
+
             if (result.alerts.length > 0) {
                 // In racing mode, suppress non-critical AIS voice announcements
                 // to avoid disrupting tactical focus. Danger-level alerts still announce.
@@ -819,6 +952,7 @@ class OrchestratorBrain {
     async performNavigationPoint() {
         if (!this.state.started) return;
         if (this.state.dnd !== 'off') return;
+        if (!this.modeManager.alertPolicy(this.state.mode).routine) return;
         
         try {
             const vesselData = await this.signalkProvider.getVesselData();
@@ -964,7 +1098,7 @@ class OrchestratorBrain {
      * Analyze sailing performance and course
      */
     async analyzeSailing() {
-        if (!this.state.started || this.config.mode === 'anchored') return;
+        if (!this.state.started || this.modeManager.isStationary(this.state.mode)) return;
         // Sail trim advice is meaningless alongside, and the LLM run behind it is
         // the heaviest recurring job on the Pi.
         if (!this.isUnderway()) return;
@@ -1269,8 +1403,14 @@ class OrchestratorBrain {
      * Update operating mode.
      * Notifies the anchor plugin so it can manage alarm lifecycle and
      * emit mode-change warnings if the anchor is still deployed.
+     *
+     * @param {string} mode
+     * @param {object} [options]
+     * @param {'user'|'auto'} [options.source='user']  'auto' for a departure
+     *   detected by the ModeManager. A user choosing 'anchored' drops the anchor
+     *   here (arming the drag alarm); a user leaving 'anchored' raises it.
      */
-    updateMode(mode) {
+    updateMode(mode, { source = 'user' } = {}) {
         const validModes = ['sailing', 'anchored', 'motoring', 'moored', 'racing'];
 
         if (!validModes.includes(mode)) {
@@ -1278,7 +1418,31 @@ class OrchestratorBrain {
         }
         
         const previousMode = this.state.mode;
+        if (mode === previousMode) {
+            // The UI re-sends its mode; only remember that the crew chose it
+            this.state.modeSource = source;
+            this.modeManager.setMode(mode, source);
+            return;
+        }
+
+        if (source === 'user' && this.autoMode) {
+            const anchorState = this.anchorPlugin.anchorState;
+            if (mode === 'anchored' && !anchorState.isMonitoring()) {
+                if (!this.anchorPlugin.dropHere()) {
+                    this.app.debug('Anchored without a position: drag alarm not armed');
+                }
+            } else if (previousMode === 'anchored' && mode !== 'anchored' && anchorState.isMonitoring()) {
+                this.anchorPlugin.raiseHere();
+            }
+        }
+
         this.state.mode = mode;
+        this.state.modeSource = source;
+        this.modeManager.setMode(mode, source);
+        // Alongside, or leaving an anchorage: a pending depth alert is stale
+        if (mode === 'moored' || previousMode === 'anchored') {
+            this._clearDepthNotification();
+        }
 
         // Delegate anchor lifecycle to AnchorPlugin
         try {
@@ -1322,7 +1486,7 @@ class OrchestratorBrain {
         });
         
         const localizedMode = this.cm.t(`mode.${mode}`);
-        this.voice.speak(this.cm.t('mode.changed', { mode: localizedMode }));
+        this.voice.speak(this.cm.t(source === 'auto' ? 'mode.departure' : 'mode.changed', { mode: localizedMode }));
     }
 
     /**
@@ -1543,6 +1707,7 @@ class OrchestratorBrain {
      * @returns {boolean}
      */
     isUnderway() {
+        if (this.modeManager.isStationary(this.state.mode)) return false;
         try {
             const state = this.signalkProvider?._getSelfPath?.('navigation.state');
             if (typeof state !== 'string') return true;
@@ -1623,6 +1788,8 @@ class OrchestratorBrain {
         const weatherAssessment = this.state.lastWeatherAnalysis?.assessment;
         return {
             mode: this.state.mode,
+            modeSource: this.state.modeSource,
+            autoMode: this.autoMode,
             started: this.state.started,
             dnd: this.getDndStatus(),
             alertsActive: this.state.alertsActive,

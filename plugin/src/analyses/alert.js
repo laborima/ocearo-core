@@ -188,6 +188,8 @@ class AlertAnalyzer {
      * @returns {boolean}
      */
     isUnderway() {
+        const mode = this.getMode?.();
+        if (mode === 'moored' || mode === 'anchored') return false;
         try {
             const node = this.app?.getSelfPath?.('navigation.state');
             const state = (node && typeof node === 'object' && 'value' in node) ? node.value : node;
@@ -198,6 +200,11 @@ class AlertAnalyzer {
         }
     }
 
+    /** @returns {boolean} true for depth / shallow water / AIS proximity alerts */
+    isDepthOrCollision(alert) {
+        return /depth|shallow|closestapproach|collision|\bcpa\b/i.test(String(alert?.key || ''));
+    }
+
     /**
      * Determine if alert should be spoken
      */
@@ -205,6 +212,13 @@ class AlertAnalyzer {
         const mode = this.config.alertMode || 'smart';
 
         if (mode === 'silent') {
+            return false;
+        }
+
+        // Alongside or at anchor, shallow water and close passes are the normal
+        // state of affairs: instruments' depth and CPA alarms stay silent there
+        // (ocearo-core handles the depth at anchor itself, once per anchorage)
+        if (!this.isUnderway() && this.isDepthOrCollision(alert)) {
             return false;
         }
 

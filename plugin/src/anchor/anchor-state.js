@@ -30,7 +30,8 @@ class AnchorState {
             rodeLength: null,     // metres — chain/rope paid out
             anchorDepth: null,    // metres — water depth at drop point
             droppedAt: null,      // ISO timestamp
-            raisedAt: null        // ISO timestamp
+            raisedAt: null,       // ISO timestamp
+            depthAlerts: {}       // { warn, alarm }: depth alerts already given at this anchorage
         };
     }
 
@@ -97,6 +98,20 @@ class AnchorState {
         return this._state.droppedAt;
     }
 
+    /** @returns {object} depth alerts already given at this anchorage */
+    get depthAlerts() {
+        return this._state.depthAlerts || {};
+    }
+
+    /**
+     * Remember the depth alerts given at this anchorage (reset by drop()).
+     * @param {{ warn?: boolean, alarm?: boolean }} flags
+     */
+    setDepthAlerts(flags) {
+        this._state.depthAlerts = { ...flags };
+        this.save();
+    }
+
     /** @returns {boolean} true when anchor is on the bottom */
     isDropped() {
         return this._state.state === STATES.DROPPED;
@@ -117,6 +132,7 @@ class AnchorState {
         this._state.position = position ? { ...position } : null;
         this._state.droppedAt = new Date().toISOString();
         this._state.raisedAt = null;
+        this._state.depthAlerts = {};
         this.save();
         this.app.debug('Anchor state → DROPPING');
     }
