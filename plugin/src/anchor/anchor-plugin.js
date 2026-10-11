@@ -107,6 +107,37 @@ class AnchorPlugin {
         }
     }
 
+    /**
+     * Drop the anchor at the vessel's position, as the crew choosing the
+     * "anchored" mode means, so the drag alarm is armed.
+     * Does not notify the brain (the brain is the caller).
+     * @returns {boolean} false when no position is known
+     */
+    dropHere() {
+        const position = this._readPosition();
+        if (!position) return false;
+        this.anchorState.drop(position);
+        this.anchorState.confirmDropped(position);
+        this.anchorAlarm.clearTrack();
+        this.anchorAlarm.start();
+        this.anchorAlarm.publishAnchorData();
+        this.app.debug(`Anchor dropped at ${position.latitude.toFixed(5)}, ${position.longitude.toFixed(5)} (anchored mode)`);
+        return true;
+    }
+
+    /**
+     * Raise the anchor when the crew leaves the "anchored" mode.
+     * Does not notify the brain (the brain is the caller).
+     */
+    raiseHere() {
+        this.anchorState.raise();
+        this.anchorAlarm.stop();
+        this.anchorAlarm.clearAnchorData();
+        this.anchorAlarm.clearTrack();
+        this.anchorState.confirmRaised();
+        this.app.debug('Anchor raised (left anchored mode)');
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Router registration
     // ─────────────────────────────────────────────────────────────────────────
@@ -309,6 +340,10 @@ class AnchorPlugin {
      * @returns {Promise<{latitude: number, longitude: number}|null>}
      */
     async _getCurrentPosition() {
+        return this._readPosition();
+    }
+
+    _readPosition() {
         try {
             const pos = this.app.getSelfPath('navigation.position');
             if (pos && pos.value) {

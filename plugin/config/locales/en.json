@@ -33,7 +33,8 @@
     "motoring": "Motoring",
     "moored": "Moored",
     "racing": "Racing",
-    "changed": "Operating mode changed to: {mode}"
+    "changed": "Operating mode changed to: {mode}",
+    "departure": "Departure detected, switching to: {mode}"
   },
   "status": {
     "system": "System status",
@@ -367,5 +368,10 @@
   "route": {
     "no_destination": "No destination set.",
     "no_position": "Current position unknown."
+  },
+  "anchor": {
+    "depthAtLowWater": "At anchor: at low water around {time}, only about {depth} metres will remain. Check the scope and swinging room.",
+    "depthLow": "At anchor: shallow water, {depth} metres.",
+    "depthAlarm": "Anchor alarm: only {depth} metres of water left."
   }
 }

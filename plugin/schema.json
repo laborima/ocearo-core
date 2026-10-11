@@ -31,8 +31,8 @@
     },
     "mode": {
       "type": "string",
-      "title": "Operating Mode",
-      "description": "Current vessel mode, used to adapt analyses.",
+      "title": "Operating Mode (automatic mode off)",
+      "description": "Mode used when the automatic mode is disabled. With it enabled, the system starts moored (anchored if the anchor was down) and switches to sailing or motoring once the boat moves.",
       "enum": [
         "sailing",
         "anchored",
@@ -41,6 +41,36 @@
         "racing"
       ],
       "default": "sailing"
+    },
+    "autoMode": {
+      "type": "object",
+      "title": "Automatic mode",
+      "description": "Start moored (no collision or shallow-water alerts alongside), switch to sailing or motoring once the boat really moves. Anchored, chosen by the crew, never ends on its own: drifting is the anchor alarm's job.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enabled",
+          "default": true
+        },
+        "movingSogKnots": {
+          "type": "number",
+          "title": "Under way above (knots)",
+          "default": 1.5,
+          "minimum": 0.5
+        },
+        "movingSustainSeconds": {
+          "type": "number",
+          "title": "...sustained for (s)",
+          "default": 45,
+          "minimum": 5
+        },
+        "movingDistanceMeters": {
+          "type": "number",
+          "title": "...or moved more than (m)",
+          "default": 120,
+          "minimum": 30
+        }
+      }
     },
     "llm": {
       "type": "object",

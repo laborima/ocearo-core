@@ -33,7 +33,8 @@
     "motoring": "Navigation au moteur",
     "moored": "Amarré",
     "racing": "Régate",
-    "changed": "Mode changé en : {mode}"
+    "changed": "Mode changé en : {mode}",
+    "departure": "Départ détecté, passage en mode : {mode}"
   },
   "status": {
     "system": "État du système",
@@ -367,5 +368,10 @@
   "route": {
     "no_destination": "Aucune destination définie.",
     "no_position": "Position actuelle inconnue."
+  },
+  "anchor": {
+    "depthAtLowWater": "Au mouillage : à basse mer vers {time}, il ne restera qu'environ {depth} mètres. Vérifie la longueur de chaîne et la place pour éviter.",
+    "depthLow": "Au mouillage : profondeur faible, {depth} mètres.",
+    "depthAlarm": "Alerte au mouillage : plus que {depth} mètres d'eau."
   }
 }
