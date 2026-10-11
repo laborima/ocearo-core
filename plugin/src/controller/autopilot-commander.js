@@ -9,7 +9,7 @@
  * whatever security strategy is configured.
  *
  * The paths below are the ones @signalk/signalk-autopilot registers PUT handlers
- * for, so a boat running that plugin (type raymarineN2K on cirrus) is driven
+ * for, so a boat running that plugin (type raymarineN2K, for instance) is driven
  * without any further glue. When no autopilot plugin is loaded the server answers
  * 405 "PUT not supported"; we record that so the UI can say so plainly instead of
  * silently swallowing every button press.

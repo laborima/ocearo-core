@@ -4,7 +4,7 @@ const ModeManager = require('../src/brain/mode-manager');
 const AlertAnalyzer = require('../src/analyses/alert');
 
 const KN = 1 / 1.943844; // m/s per knot
-const MARINA = { latitude: 46.14327, longitude: -1.16451 };
+const MARINA = { latitude: 47.5, longitude: -3.0 };
 // ~ metres north of the marina position
 const north = (m) => ({ latitude: MARINA.latitude + m / 111320, longitude: MARINA.longitude });
 

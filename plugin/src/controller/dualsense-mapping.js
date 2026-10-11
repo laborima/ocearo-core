@@ -6,7 +6,7 @@
  *
  * joydev numbers buttons by ascending input keycode and axes by ascending ABS
  * code. For a DualSense driven by the in-tree hid-playstation driver that yields
- * the table below — verified on cirrus (DualSense hw 0x617 / fw 0x0110002a) by
+ * the table below — verified on a Raspberry Pi 5 (DualSense hw 0x617 / fw 0x0110002a) by
  * reading the declared capabilities of /dev/input/js* and cross-checking against
  * real button presses.
  *

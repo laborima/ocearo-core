@@ -68,8 +68,8 @@ test('course data: the next waypoint position is read through its Signal K node'
     const node = (value) => ({ value, $source: 'courseApi', timestamp: '2026-10-05T10:00:00Z' });
     const self = {
         navigation: {
-            position: node({ latitude: 46.13, longitude: -1.22 }),
-            courseGreatCircle: { nextPoint: { position: node({ latitude: 46.143, longitude: -1.19 }), type: node('Location') } },
+            position: node({ latitude: 47.49, longitude: -3.03 }),
+            courseGreatCircle: { nextPoint: { position: node({ latitude: 47.5, longitude: -3.0 }), type: node('Location') } },
         },
     };
     const app = { debug: () => {}, error: () => {}, setPluginStatus: () => {}, getSelfPath: (p) => p.split('.').reduce((o, k) => o?.[k], self) };

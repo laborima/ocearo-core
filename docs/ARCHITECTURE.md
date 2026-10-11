@@ -295,7 +295,7 @@ Maintains contextual memory for coherent AI responses:
 ```javascript
 {
   vesselContext: {
-    name: "Cirrus",
+    name: "My Boat",
     type: "sailboat",
     // ... vessel details
   },
