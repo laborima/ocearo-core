@@ -284,7 +284,9 @@
       "stand_on_ready": "Hold on, but be ready to act if she does not",
       "stand_on_act": "She is not giving way: act now, and do not turn to port",
       "restricted_visibility": "Slow down, sound signal, do not turn to port"
-    }
+    },
+    "busy": "Busy waters: {count} vessels close by. The nearest, {name}, at {distance} miles, passing at {cpa} miles.",
+    "busy_repeat": "Still busy waters: {count} vessels close by. The nearest, {name}, at {distance} miles."
   },
   "alerts": {
     "generic": "Alert: {message}. Value: {value}",
