@@ -3,7 +3,7 @@
  *
  * Decides which AIS collision alerts are worth saying aloud and writing to the
  * logbook. The AIS analyzer flags every vessel at risk; spoken one by one, a
- * busy channel became a stream of alarms (5 in 4 minutes leaving La Rochelle
+ * busy channel became a stream of alarms (5 in 4 minutes leaving a marina
  * on 2026-10-10, 101 logbook entries that day) until the crew silenced
  * everything, the real alarms included.
  *
