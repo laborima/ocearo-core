@@ -42,6 +42,15 @@ class AisTrafficGate {
         this._encounters = new Map(); // key -> { announced, lastAtRisk }
     }
 
+    /** Forget everything (collision alerts switched off: alongside, at anchor) */
+    reset() {
+        this.busy = false;
+        this._calmSince = null;
+        this._groupAnnounced = 0;
+        this._groupAt = 0;
+        this._encounters.clear();
+    }
+
     /** True for a vessel about to be on top of us */
     isExtreme(alert) {
         const { extremeCpaNm, extremeTcpaMin } = this.options;

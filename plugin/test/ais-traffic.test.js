@@ -70,3 +70,13 @@ test('two vessels at risk do not make busy waters', () => {
     assert.strictEqual(r.alerts.length, 2);
     assert.strictEqual(r.group, null);
 });
+
+test('reset (alongside, at anchor): busy waters do not carry over to the next departure', () => {
+    const gate = new AisTrafficGate();
+    const fleet = [vessel(1), vessel(2), vessel(3)];
+    assert.strictEqual(gate.update(result(fleet), 0).busy, true);
+    gate.reset();
+    const after = gate.update(result([vessel(4)]), MIN);
+    assert.strictEqual(after.busy, false);
+    assert.strictEqual(after.alerts.length, 1);
+});

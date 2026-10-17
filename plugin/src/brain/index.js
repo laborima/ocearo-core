@@ -726,6 +726,7 @@ class OrchestratorBrain {
             // counts for the status, announce nothing.
             if (!this.modeManager.alertPolicy(this.state.mode).collision) {
                 this.aisAnalyzer.cleanup();
+                this.aisTraffic.reset();      // leaving port: no busy waters left over from before
                 return;
             }
 

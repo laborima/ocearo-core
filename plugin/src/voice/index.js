@@ -548,15 +548,20 @@ class VoiceModule {
             const proc = spawn(piperConfig.python, args, { env: audioEnv });
             this.piperProc = proc;
             this._piperBuffer = '';
-            proc.stdout.on('data', (data) => this._onPiperStdout(data));
+            // Events of a server already replaced (killed by the watchdog, then a new one
+            // started) must not touch the current one
+            const current = () => this.piperProc === proc;
+            proc.stdout.on('data', (data) => { if (current()) this._onPiperStdout(data); });
             proc.stderr.on('data', (data) => this.app.debug(`Piper server: ${data.toString().trim()}`));
             proc.on('error', (error) => {
                 this.app.error(`Piper server error: ${error.message}`);
+                if (!current()) return;
                 this._piperServerFailed = true;
                 this._teardownPiper();
             });
             proc.on('exit', (code) => {
                 this.app.debug(`Piper server exited (code ${code})`);
+                if (!current()) return;
                 // Died before its first answer: not usable here, back to one-shot
                 if (!this._piperReady) this._piperServerFailed = true;
                 this._teardownPiper();
