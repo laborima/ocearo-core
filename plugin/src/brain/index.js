@@ -17,6 +17,7 @@ const RoutePlanner = require('../analyses/route');
 const RacingAnalyzer = require('../analyses/racing');
 const AnchorPlugin = require('../anchor/anchor-plugin');
 const ModeManager = require('./mode-manager');
+const AisTrafficGate = require('../analyses/ais-traffic');
 
 class OrchestratorBrain {
     constructor(app, config, components) {
@@ -52,6 +53,8 @@ class OrchestratorBrain {
         this.sailCourseAnalyzer = new SailCourseAnalyzer(app, config, this.llm, this.cm);
         this.sailSettingsAnalyzer = new SailSettingsAnalyzer(app, config, this.llm, this.cm);
         this.aisAnalyzer = new AISAnalyzer(app, config, this.voice, this.cm);
+        // Which collision alerts are said and logged (busy waters grouped)
+        this.aisTraffic = new AisTrafficGate(config.ais?.traffic || {});
         this.failurePredictor = new FailurePredictor(app, config, this.llm, this.cm);
         this.routePlanner = new RoutePlanner(app, config, this.llm, this.cm);
         this.racingAnalyzer = new RacingAnalyzer(app, config, this.llm, this.cm, this.weatherProvider);
@@ -723,21 +726,43 @@ class OrchestratorBrain {
             // counts for the status, announce nothing.
             if (!this.modeManager.alertPolicy(this.state.mode).collision) {
                 this.aisAnalyzer.cleanup();
+                this.aisTraffic.reset();      // leaving port: no busy waters left over from before
                 return;
             }
 
-            if (result.alerts.length > 0) {
+            const gate = this.aisTraffic.update(result, Date.now());
+
+            // Busy waters (a channel, a harbour approach): one grouped
+            // announcement, repeated once, instead of an alarm per vessel
+            if (gate.group) {
+                const nearest = gate.group.nearest || {};
+                const fmt = (v) => (Number.isFinite(v) ? v.toFixed(2) : '?');
+                const message = this.cm.t(gate.group.repeat ? 'ais.busy_repeat' : 'ais.busy', {
+                    count: gate.group.count,
+                    name: nearest.name || this.cm.t('ais.unknown_vessel'),
+                    distance: fmt(nearest.range),
+                    cpa: fmt(nearest.cpa),
+                });
+                this.voice.speak(message, { priority: 'critical' });
+                if (gate.group.started) {
+                    await this.logAnalysisToLogbook('safety', { summary: message, confidence: 0.9, aisTargets: gate.group.count });
+                }
+            }
+
+            if (gate.alerts.length > 0) {
                 // In racing mode, suppress non-critical AIS voice announcements
                 // to avoid disrupting tactical focus. Danger-level alerts still announce.
                 const isRacing = this.state.mode === 'racing';
-                const hasDangerTargets = result.dangerCount > 0;
+                const hasDanger = gate.alerts.some(a => a.severity === 'alarm');
+                const speech = gate.alerts.map(a => a.speech).join('. ');
 
-                if (result.speech && (!isRacing || hasDangerTargets)) {
-                    this.voice.speak(result.speech, { priority: 'critical' });
+                if (speech && (!isRacing || hasDanger)) {
+                    this.voice.speak(speech, { priority: 'critical' });
                 }
 
-                // Try LLM-enriched analysis for danger-level targets
-                const dangerTargets = result.targets.filter(t => t.risk === 'danger');
+                // LLM-enriched advice, only for a danger that is being announced
+                const announcedKeys = new Set(gate.alerts.map(a => a.mmsi || a.target));
+                const dangerTargets = result.targets.filter(t => t.risk === 'danger' && announcedKeys.has(t.mmsi || t.name));
                 if (dangerTargets.length > 0) {
                     try {
                         const llmAnalysis = await this.llm.analyzeCollisionRisk(dangerTargets, {
@@ -753,10 +778,8 @@ class OrchestratorBrain {
                 }
 
                 // Log collision risks to logbook — at most one entry per target
-                // per cooldown window. The AIS check runs every 15 s, so without
-                // this a persistent target floods the logbook with hundreds of
-                // near-identical entries.
-                for (const alert of result.alerts) {
+                // per cooldown window, and only the ones announced.
+                for (const alert of gate.alerts) {
                     if (alert.severity !== 'alarm') continue;
                     const key = alert.mmsi || alert.target || 'unknown';
                     const lastLogged = this._aisLogbookCooldown.get(key) || 0;
@@ -780,7 +803,7 @@ class OrchestratorBrain {
                 this.memoryManager.addAlert({
                     type: 'ais_collision_risk',
                     category: 'safety',
-                    targets: result.alerts.map(a => a.target),
+                    targets: gate.alerts.map(a => a.target),
                     dangerCount: result.dangerCount,
                     timestamp: new Date().toISOString()
                 });

@@ -12,6 +12,26 @@ const path = require('path');
 const fs = require('fs');
 const { textUtils } = require('../common');
 
+/**
+ * Environment for the audio players. Signal K runs as a system service,
+ * without the desktop session's XDG_RUNTIME_DIR: aplay then opens the sound
+ * card directly, which fails ("device busy") while PipeWire is using it for a
+ * browser, and never reaches a Bluetooth speaker. Pointing it at the session
+ * of the same user makes ALSA's default device go through PipeWire.
+ */
+const audioEnv = (() => {
+    const env = { ...process.env };
+    const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+    const runDir = uid !== null ? `/run/user/${uid}` : null;
+    if (!env.XDG_RUNTIME_DIR && runDir && fs.existsSync(runDir)) {
+        env.XDG_RUNTIME_DIR = runDir;
+        if (!env.DBUS_SESSION_BUS_ADDRESS && fs.existsSync(`${runDir}/bus`)) {
+            env.DBUS_SESSION_BUS_ADDRESS = `unix:path=${runDir}/bus`;
+        }
+    }
+    return env;
+})();
+
 class VoiceModule {
     constructor(app, config) {
         this.app = app;
@@ -50,7 +70,12 @@ class VoiceModule {
                 model: config.voice?.piper?.model || (config.language === 'fr' ? 'fr_FR-tom-medium' : 'en_US-joe-medium'),
                 modelPath: config.voice?.piper?.modelPath || '/opt/piper',
                 speed: config.voice?.piper?.speed || 1.0,
-                outputDevice: config.voice?.piper?.outputDevice || 'default'
+                outputDevice: config.voice?.piper?.outputDevice || 'default',
+                // Python of the Piper install (piper-tts >= 1.3): with it the
+                // voice stays loaded in a server (scripts/ocearo-piper-server.py)
+                python: config.voice?.piper?.python || '/opt/piper/venv/bin/python3',
+                server: config.voice?.piper?.server !== false,
+                utteranceTimeoutSeconds: config.voice?.piper?.utteranceTimeoutSeconds || 60
             },
             espeak: {
                 command: 'espeak-ng',
@@ -73,6 +98,12 @@ class VoiceModule {
         this._kokoroReady = false;
         this._kokoroBuffer = '';
         this._kokoroPending = null; // { resolve, timer }
+
+        // Persistent Piper server (same protocol as the Kokoro daemon)
+        this.piperProc = null;
+        this._piperBuffer = '';
+        this._piperPending = null; // { resolve, timer }
+        this._piperServerFailed = false;
         
         // Test TTS backend availability (non-blocking)
         this.testBackend().catch(error => {
@@ -181,7 +212,7 @@ class VoiceModule {
 
         try {
             this.app.debug(`Starting Kokoro daemon: ${kokoroConfig.command} ${kokoroConfig.script} --server`);
-            const proc = spawn(kokoroConfig.command, [kokoroConfig.script, '--server', '--lang', defaultLang]);
+            const proc = spawn(kokoroConfig.command, [kokoroConfig.script, '--server', '--lang', defaultLang], { env: audioEnv });
             this.kokoroProc = proc;
             this._kokoroReady = false;
             this._kokoroBuffer = '';
@@ -489,9 +520,121 @@ class VoiceModule {
     }
 
     /**
-     * Speak with Piper TTS
+     * Speak with Piper TTS: through the resident server when the Piper Python
+     * is there, else one `piper` process per utterance.
      */
     async speakWithPiper(text, options) {
+        const piperConfig = this.backends.piper;
+        if (piperConfig.server && !this._piperServerFailed && fs.existsSync(piperConfig.python)) {
+            if (this._ensurePiperServer()) return this._speakWithPiperServer(text, options);
+        }
+        return this._speakWithPiperOnce(text, options);
+    }
+
+    /**
+     * Start the Piper server once: the voice model is loaded a single time
+     * instead of on every utterance (about 4.5 s saved per announcement on a
+     * Raspberry Pi 5).
+     * @returns {boolean} true if a server process is available
+     */
+    _ensurePiperServer() {
+        if (this.piperProc && !this.piperProc.killed) return true;
+        const piperConfig = this.backends.piper;
+        const script = path.join(__dirname, '..', '..', 'scripts', 'ocearo-piper-server.py');
+        const modelFile = path.join(piperConfig.modelPath || '/opt/piper', `${piperConfig.model}.onnx`);
+        try {
+            const args = [script, '--model', modelFile, '--device', piperConfig.outputDevice || 'default'];
+            this.app.debug(`Starting Piper server: ${piperConfig.python} ${args.join(' ')}`);
+            const proc = spawn(piperConfig.python, args, { env: audioEnv });
+            this.piperProc = proc;
+            this._piperBuffer = '';
+            // Events of a server already replaced (killed by the watchdog, then a new one
+            // started) must not touch the current one
+            const current = () => this.piperProc === proc;
+            proc.stdout.on('data', (data) => { if (current()) this._onPiperStdout(data); });
+            proc.stderr.on('data', (data) => this.app.debug(`Piper server: ${data.toString().trim()}`));
+            proc.on('error', (error) => {
+                this.app.error(`Piper server error: ${error.message}`);
+                if (!current()) return;
+                this._piperServerFailed = true;
+                this._teardownPiper();
+            });
+            proc.on('exit', (code) => {
+                this.app.debug(`Piper server exited (code ${code})`);
+                if (!current()) return;
+                // Died before its first answer: not usable here, back to one-shot
+                if (!this._piperReady) this._piperServerFailed = true;
+                this._teardownPiper();
+            });
+            this._piperReady = false;
+            return true;
+        } catch (error) {
+            this.app.error(`Failed to start the Piper server: ${error.message}`);
+            this._piperServerFailed = true;
+            this.piperProc = null;
+            return false;
+        }
+    }
+
+    _onPiperStdout(data) {
+        this._piperBuffer += data.toString();
+        let idx;
+        while ((idx = this._piperBuffer.indexOf('\n')) !== -1) {
+            const line = this._piperBuffer.slice(0, idx).trim();
+            this._piperBuffer = this._piperBuffer.slice(idx + 1);
+            if (line === '__OCEARO_TTS__:ready') {
+                this._piperReady = true;
+            } else if (line === '__OCEARO_TTS__:done' || line === '__OCEARO_TTS__:error') {
+                this._resolvePiperPending();
+            }
+        }
+    }
+
+    _resolvePiperPending() {
+        if (this._piperPending) {
+            clearTimeout(this._piperPending.timer);
+            const { resolve } = this._piperPending;
+            this._piperPending = null;
+            resolve();
+        }
+    }
+
+    _teardownPiper() {
+        this.piperProc = null;
+        this._piperReady = false;
+        this._piperBuffer = '';
+        this._resolvePiperPending();
+    }
+
+    _speakWithPiperServer(text, options) {
+        const piperConfig = this.backends.piper;
+        return new Promise((resolve) => {
+            // Watchdog: a hung server must not block the announcements behind it
+            const timer = setTimeout(() => {
+                this.app.error('Piper server timed out; restarting on next utterance');
+                this._piperPending = null;
+                try { this.piperProc?.kill(); } catch { /* ignore */ }
+                this._teardownPiper();
+                resolve();
+            }, piperConfig.utteranceTimeoutSeconds * 1000);
+            this._piperPending = {
+                resolve: () => { this.app.debug(`Piper Spoke: "${text}"`); resolve(); },
+                timer
+            };
+            const lengthScale = options.speed || piperConfig.speed || 1.0;
+            try {
+                this.piperProc.stdin.write(JSON.stringify({ text, length_scale: lengthScale }) + '\n');
+            } catch (error) {
+                this.app.error(`Piper server write failed: ${error.message}`);
+                this._resolvePiperPending();
+            }
+        });
+    }
+
+    /**
+     * Speak with Piper TTS, one process per utterance (model loaded each time)
+     */
+    async _speakWithPiperOnce(text, options) {
         const piperConfig = this.backends.piper;
         const modelDir = piperConfig.modelPath || '/opt/piper';
         const modelFile = path.join(modelDir, `${piperConfig.model}.onnx`);
@@ -518,7 +661,7 @@ class VoiceModule {
                 '-f', 'S16_LE',
                 '-t', 'raw',
                 '-'
-            ]);
+            ], { env: audioEnv });
             
             piper.stdout.pipe(aplay.stdin);
             
@@ -551,7 +694,7 @@ class VoiceModule {
                 text
             ];
             
-            const process = spawn('espeak', args);
+            const process = spawn('espeak', args, { env: audioEnv });
             
             process.on('error', reject);
             
@@ -594,6 +737,15 @@ class VoiceModule {
         }
         this.kokoroProc = null;
         this._kokoroReady = false;
+        this._resolvePiperPending();
+        if (this.piperProc && !this.piperProc.killed) {
+            try {
+                this.piperProc.stdin.end();
+                this.piperProc.kill();
+            } catch { /* ignore */ }
+        }
+        this.piperProc = null;
+        this._piperReady = false;
     }
 
     /**

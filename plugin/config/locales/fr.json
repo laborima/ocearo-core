@@ -284,7 +284,9 @@
       "stand_on_ready": "Maintenez, mais préparez-vous à manœuvrer s'il ne réagit pas",
       "stand_on_act": "Il ne manœuvre pas : manœuvrez maintenant, sans venir sur bâbord",
       "restricted_visibility": "Ralentissez, signal sonore, ne venez pas sur bâbord"
-    }
+    },
+    "busy": "Trafic dense : {count} bateaux proches. Le plus proche, {name}, à {distance} milles, passage à {cpa} milles.",
+    "busy_repeat": "Toujours du trafic dense : {count} bateaux proches. Le plus proche, {name}, à {distance} milles."
   },
   "alerts": {
     "generic": "Alerte : {message}. Valeur : {value}",
