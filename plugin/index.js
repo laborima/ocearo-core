@@ -291,18 +291,20 @@ module.exports = function(app) {
                 const hasValidRole = userType === 'admin' || userType === 'readWrite' ||
                     userType === 'write' || userType === 'read' || userType === 'readwrite';
 
-                // Check if read-only access is allowed for this request path
-                const allowReadOnly = typeof app.securityStrategy.allowReadOnly === 'function'
+                // Anonymous read-only access (a server setting) only ever covers
+                // reads: a request that changes something (speak, mode, logbook,
+                // controller, downloads, LLM calls) needs a user allowed to write.
+                // Signal K >= 2.x already asks for an admin on plugin routes; this
+                // keeps older servers from accepting anonymous writes.
+                const isRead = req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
+                const canWrite = userType === 'admin' || userType === 'readWrite' || userType === 'readwrite' || userType === 'write';
+                const allowReadOnly = isRead && typeof app.securityStrategy.allowReadOnly === 'function'
                     ? app.securityStrategy.allowReadOnly(req)
                     : false;
 
-                // Allow access if:
-                // 1. User is authenticated with a valid role (admin, read, write, readWrite)
-                // 2. OR read-only access is allowed for this request
-                // 3. OR user object exists and isAuthenticated check passed
-                const hasAccess = (isAuthenticated && hasValidRole) ||
-                    allowReadOnly ||
-                    (req.user && isAuthenticated);
+                const hasAccess = isRead
+                    ? (isAuthenticated && hasValidRole) || allowReadOnly || (req.user && isAuthenticated)
+                    : isAuthenticated && canWrite;
 
                 if (!hasAccess) {
                     return res.status(401).json({
