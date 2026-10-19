@@ -6,23 +6,32 @@
   "scripts": {
     "start": "node index.js",
     "test": "node --test",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepack": "node ../scripts/prepare-npm-package.mjs",
+    "postpack": "node ../scripts/prepare-npm-package.mjs --clean"
   },
   "keywords": [
-    "signalk",
     "signalk-node-server-plugin",
+    "signalk-category-notifications",
+    "signalk-category-ais",
+    "signalk-category-weather",
+    "signalk-category-utility",
+    "signalk",
     "marine",
     "navigation",
     "sailing",
-    "AI",
-    "assistant",
-    "LLM",
-    "ollama",
-    "TTS",
-    "piper",
+    "colregs",
+    "ais",
+    "anchor-watch",
+    "bathymetry",
     "weather",
     "tides",
     "logbook",
+    "tts",
+    "piper",
+    "ollama",
+    "llm",
+    "raspberry-pi",
     "ocearo"
   ],
   "author": {
@@ -33,7 +42,8 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/laborima/ocearo-core.git"
+    "url": "git+https://github.com/laborima/ocearo-core.git",
+    "directory": "plugin"
   },
   "bugs": {
     "url": "https://github.com/laborima/ocearo-core/issues"
@@ -56,5 +66,33 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "files": [
+    "index.js",
+    "schema.json",
+    "src/",
+    "config/",
+    "scripts/",
+    "icons/",
+    "test/",
+    "README.md",
+    "README.fr.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "signalk": {
+    "displayName": "Océaro Core",
+    "appIcon": "./icons/ocearo-core.webp",
+    "screenshots": [
+      "https://raw.githubusercontent.com/laborima/ocearo-ui/main/docs/screenshots/colregs.jpg",
+      "https://raw.githubusercontent.com/laborima/ocearo-ui/main/docs/screenshots/anchor.jpg",
+      "https://raw.githubusercontent.com/laborima/ocearo-ui/main/docs/screenshots/traffic.jpg",
+      "https://raw.githubusercontent.com/laborima/ocearo-ui/main/docs/screenshots/logbook.jpg",
+      "https://raw.githubusercontent.com/laborima/ocearo-ui/main/docs/screenshots/engine.jpg",
+      "https://raw.githubusercontent.com/laborima/ocearo-ui/main/docs/screenshots/weather.jpg"
+    ],
+    "recommends": [
+      "ocearo-ui"
+    ]
   }
 }

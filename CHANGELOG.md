@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+Fixes from a day on board, and the package made ready for npm and the Signal K App Store.
+
+### Added
+
+- **Automatic mode from the mooring.** The plugin starts moored (anchored when the anchor was down) and switches to sailing or motoring by itself once the boat moves; anchored, chosen by the crew, never ends on its own when the boat swings or drags. No collision or depth alerts alongside; at anchor, depth is said once per anchorage, when the falling tide brings it close.
+- **Collision alerts in busy waters.** Several vessels at risk at once (a channel, a harbour approach) give one grouped announcement, repeated once, instead of an alarm per vessel; a single vessel is said twice per encounter, a newcomer after the crowd gets its own alert, and a vessel about to be on top of us is always said.
+- **npm and Signal K App Store metadata**: categories (notifications, AIS, weather, utility), app icon, screenshots, Ocearo UI recommended, READMEs with working images and links outside GitHub.
+
+### Fixed
+
+- **Announcements up to 2 minutes late.** Piper reloaded its voice for every sentence (about 4.5 s on a Raspberry Pi 5) and alerts queued behind each other on a busy sound card: the voice stays loaded in a resident server and plays through the desktop session's audio (PipeWire). A server killed by the watchdog no longer disables the voice for good.
+- **Anonymous read-only access let writes through the plugin routes** (speak, mode, logbook, controller, downloads, AI): they now need a user allowed to write.
+
 ## [1.2.1] - 2026-10-05
 
 Fixes reported on GitHub. The memory files move to the plugin's data directory by themselves on the first start.
