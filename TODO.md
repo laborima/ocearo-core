@@ -159,3 +159,8 @@ de "llama3.2:3b" en "qwen3:1.7b". Ne touche à rien d'autre.
 ---
 
 Montre-moi les diffs complets avant d'appliquer. Ne modifie aucun autre fichier.
+
+## Idées pour plus tard (2026-11-15)
+
+- Voix plus fluide : tester une voix Piper « medium/high » ou un TTS neuronal plus naturel (ex. Kokoro) en mesurant la latence sur le Pi 5 ; garder Piper en repli.
+- IA plus légère : comparer sur le Pi llama3.2:1b à d'autres petits modèles (Qwen 2.5 / Qwen 3 0,6–1,7 B, Gemma 3 1B…) sur la latence et la qualité des briefings.
