@@ -2,9 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.3.0] - 2026-11-15
 
-Fixes from a day on board, and the package made ready for npm and the Signal K App Store.
+Fixes from days on board, the package made ready for npm and the Signal K App Store, and a full test on a Raspberry Pi 5 with Signal K server 2.37. First release on npm: install it from the App Store.
 
 ### Added
 
@@ -15,7 +15,9 @@ Fixes from a day on board, and the package made ready for npm and the Signal K A
 ### Fixed
 
 - **Announcements up to 2 minutes late.** Piper reloaded its voice for every sentence (about 4.5 s on a Raspberry Pi 5) and alerts queued behind each other on a busy sound card: the voice stays loaded in a resident server and plays through the desktop session's audio (PipeWire). A server killed by the watchdog no longer disables the voice for good.
-- **Anonymous read-only access let writes through the plugin routes** (speak, mode, logbook, controller, downloads, AI): they now need a user allowed to write.
+- **Anonymous read-only access let writes through the plugin routes** (speak, mode, logbook, controller, downloads, AI): they now need a user allowed to write. With the server's security turned off, every request still goes through, as for the rest of the server.
+- **The AI model was never used after a start without Ollama.** A model not answering when the plugin started (Ollama still starting at boot, or stopped for a while) left it marked as missing until the next restart: briefings and analyses fell back to plain facts all day. Its state is checked again every minute.
+- **Logbook mode changes read "Mode: Mode: sailing -> anchored"**: they read "Mode: Sailing → Anchored", in the boat's language.
 
 ## [1.2.1] - 2026-10-05
 
