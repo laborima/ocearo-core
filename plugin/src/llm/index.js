@@ -163,6 +163,14 @@ class LLMModule {
      * Use checkConnectionAsync() for a fresh check
      */
     isConnected() {
+        // Ollama is often not up yet when the plugin starts (boot, cinema mode):
+        // a stale state is refreshed in the background, otherwise one failed
+        // check at startup would keep the model unused until the next restart
+        if (!this._refreshing && Date.now() - this._lastConnectionCheck >= this._connectionCheckInterval) {
+            this._refreshing = this.testConnection()
+                .catch(() => {})
+                .finally(() => { this._refreshing = null; });
+        }
         return this._connected;
     }
 

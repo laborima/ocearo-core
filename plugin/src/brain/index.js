@@ -1500,9 +1500,9 @@ class OrchestratorBrain {
             }
         }
         
-        // Log mode change
+        // Log mode change (the logbook puts the "Mode:" label in front itself)
         this.logSystemEvent('mode_change', {
-            summary: `Mode: ${previousMode} -> ${mode}`,
+            summary: `${this.cm.t(`mode.${previousMode}`)} → ${this.cm.t(`mode.${mode}`)}`,
             previousMode,
             newMode: mode,
             confidence: 1.0

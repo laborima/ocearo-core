@@ -3,8 +3,8 @@ const assert = require('node:assert');
 const createPlugin = require('../index.js');
 
 // The plugin's authentication middleware, taken from its router, run against fake requests
-const authMiddleware = (allowReadOnly) => {
-    const app = { debug() {}, error() {}, setPluginStatus() {}, securityStrategy: { allowReadOnly: () => allowReadOnly } };
+const authMiddleware = (allowReadOnly, isDummy = false) => {
+    const app = { debug() {}, error() {}, setPluginStatus() {}, securityStrategy: { allowReadOnly: () => allowReadOnly, isDummy: () => isDummy } };
     const plugin = createPlugin(app);
     const used = [];
     const router = new Proxy({}, { get: (_, method) => (...args) => { if (method === 'use') used.push(args[0]); } });
@@ -35,4 +35,11 @@ test('writes need a user allowed to write', () => {
     assert.strictEqual(run(mw, { method: 'POST', user: { type: 'admin' } }), 'next');
     assert.strictEqual(run(mw, { method: 'GET', user: { type: 'read' } }), 'next');
     assert.strictEqual(run(mw, { method: 'GET' }), 401);
+});
+
+test('security turned off on the server: reads and writes pass', () => {
+    const mw = authMiddleware(true, true);
+    assert.strictEqual(run(mw, { method: 'GET' }), 'next');
+    assert.strictEqual(run(mw, { method: 'POST' }), 'next');
+    assert.strictEqual(run(mw, { method: 'PUT' }), 'next');
 });

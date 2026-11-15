@@ -36,3 +36,19 @@ test('an answer cut off before it starts is reported, without opening the circui
     await assert.rejects(m.generateCompletion('Wind 3 kn', { max_tokens: 80 }), /80-token budget ran out/);
     assert.strictEqual(m._consecutiveFailures, 0);
 });
+
+test('a model down at startup is picked up once Ollama answers', async () => {
+    const m = new LLMManager({ debug: () => {}, error: () => {} }, { language: 'en', llm: {} }, { t: (k) => k });
+    let up = false;
+    global.fetch = async () => {
+        if (!up) throw new Error('ECONNREFUSED');
+        return { ok: true, json: async () => ({ models: [{ name: m.model }] }) };
+    };
+    await m.testConnection();
+    assert.strictEqual(m.isConnected(), false);
+    up = true;
+    m._lastConnectionCheck = 0; // the check interval has gone by
+    m.isConnected();
+    await m._refreshing;
+    assert.strictEqual(m.isConnected(), true);
+});

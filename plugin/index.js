@@ -281,8 +281,11 @@ module.exports = function(app) {
 
         // Authentication middleware - check if user is authenticated or if security is disabled
         router.use((req, res, next) => {
-            // If security strategy is available and requires authentication
-            if (app.securityStrategy) {
+            // Security turned off on the server (Signal K's dummy strategy): no
+            // users exist, so every request passes, as for the rest of the server
+            const securityOff = !app.securityStrategy ||
+                (typeof app.securityStrategy.isDummy === 'function' && app.securityStrategy.isDummy());
+            if (!securityOff) {
                 // Check if request is authenticated via passport
                 const isAuthenticated = req.isAuthenticated && req.isAuthenticated();
 
@@ -313,7 +316,6 @@ module.exports = function(app) {
                     });
                 }
             }
-            // If no security strategy is configured, allow all requests
             next();
         });
 
